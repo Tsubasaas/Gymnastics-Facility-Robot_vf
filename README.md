@@ -2,6 +2,8 @@
 
 [日本語](README.ja.md) | [English](README.en.md) | **中文**
 
+**本项目是 MotionLink 团队参加 2026 年东京 G1 黑客松的决赛作品。**
+
 <!-- Project badges: repository metrics update through Shields.io; technology labels describe this codebase. -->
 [![Last commit](https://img.shields.io/github/last-commit/Tsubasaas/Gymnastics-Facility-Robot_vf/main?style=flat-square&label=last%20commit)](https://github.com/Tsubasaas/Gymnastics-Facility-Robot_vf/commits/main/)
 [![GitHub stars](https://img.shields.io/github/stars/Tsubasaas/Gymnastics-Facility-Robot_vf?style=flat-square&label=stars)](https://github.com/Tsubasaas/Gymnastics-Facility-Robot_vf/stargazers)
