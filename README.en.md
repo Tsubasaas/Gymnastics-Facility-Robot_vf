@@ -2,7 +2,7 @@
 
 [日本語](README.ja.md) | **English** | [中文](README.md)
 
-**This is the finalist project by Team MotionLink for the 2026 G1 Hackathon in Tokyo.**
+© 2026 MotionLink. All rights reserved.
 
 <!-- Project badges: repository metrics update through Shields.io; technology labels describe this codebase. -->
 [![Last commit](https://img.shields.io/github/last-commit/Tsubasaas/Gymnastics-Facility-Robot_vf/main?style=flat-square&label=last%20commit)](https://github.com/Tsubasaas/Gymnastics-Facility-Robot_vf/commits/main/)

@@ -2,7 +2,7 @@
 
 **日本語** | [English](README.en.md) | [中文](README.md)
 
-**本プロジェクトは、MotionLink チームによる東京2026年 G1 ハッカソンの決勝出場作品です。**
+© 2026 MotionLink. All rights reserved.
 
 <!-- Project badges: repository metrics update through Shields.io; technology labels describe this codebase. -->
 [![Last commit](https://img.shields.io/github/last-commit/Tsubasaas/Gymnastics-Facility-Robot_vf/main?style=flat-square&label=last%20commit)](https://github.com/Tsubasaas/Gymnastics-Facility-Robot_vf/commits/main/)
