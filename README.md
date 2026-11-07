@@ -25,7 +25,7 @@ MuJoCo 查看器采用直接设置关节角度的**运动学回放**，可以检
 
 ![G1 伸展动作预览](preview/1_nobi_stretch.gif)
 
-更多动图见 [preview](preview/)，视频素材见 [779956722.mp4](779956722.mp4)。
+更多动图见 [preview](preview/)，视频素材见 [group gymnastics.mp4](group%20gymnastics.mp4)。
 
 ## 2. 技术栈与工作流程
 
