@@ -1,0 +1,949 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>体操コーチ コンソール</title>
+<style>
+:root {
+  --text: #0b2545;
+  --muted: #5a7593;
+  --panel: rgba(255, 255, 255, .82);
+  --panel-2: #f1f8ff;
+  --field: #ffffff;
+  --line: #d3e6f8;
+  --line-strong: #b5d4f1;
+  --accent: #1d8cf8;
+  --grad: linear-gradient(135deg, #22d3ee 0%, #3b82f6 55%, #6366f1 100%);
+  --grad-soft: linear-gradient(135deg, #e3f8ff 0%, #e6efff 55%, #ece9ff 100%);
+  --ok: #12a150;
+  --warn: #d97706;
+  --bad: #e11d48;
+  --stop: #ef4444;
+  --stop-dark: #c81e1e;
+  --shadow: 0 10px 30px rgba(29, 108, 210, .10), 0 2px 6px rgba(29, 108, 210, .06);
+  --radius: 14px;
+  --font: "Noto Sans JP", "Yu Gothic UI", "Meiryo", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body {
+  color: var(--text); font: 14px/1.5 var(--font); -webkit-font-smoothing: antialiased;
+  background-color: #e2f1ff;
+  background-image:
+    radial-gradient(1100px 640px at -5% -10%, #8fd8ff 0%, rgba(143, 216, 255, 0) 62%),
+    radial-gradient(950px 660px at 105% -5%, #b9b4ff 0%, rgba(185, 180, 255, 0) 60%),
+    radial-gradient(1000px 720px at 40% 118%, #8ff0ff 0%, rgba(143, 240, 255, 0) 62%),
+    linear-gradient(160deg, #e6f6ff 0%, #f2f8ff 50%, #e4eeff 100%);
+  background-attachment: fixed;
+}
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 3px solid rgba(59, 130, 246, .45); outline-offset: 2px; }
+
+/* ---------- 顶栏 ---------- */
+header {
+  position: sticky; top: 0; z-index: 10;
+  display: flex; align-items: center; gap: 16px; padding: 10px 20px;
+  background: rgba(255, 255, 255, .72); border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(14px); box-shadow: 0 4px 18px rgba(29, 108, 210, .08);
+}
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 16px; white-space: nowrap; }
+.brand-mark {
+  width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center;
+  background: var(--grad); color: #fff; font-size: 16px; box-shadow: 0 4px 12px rgba(59, 130, 246, .35);
+}
+.chips { display: flex; gap: 8px; flex-wrap: wrap; flex: 1; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 11px;
+  border: 1px solid var(--line); border-radius: 999px; background: rgba(255, 255, 255, .9);
+  color: var(--muted); font-size: 12px; white-space: nowrap;
+}
+.dot { width: 8px; height: 8px; border-radius: 50%; background: #b8c7d6; }
+.dot.ok { background: var(--ok); box-shadow: 0 0 0 3px rgba(18, 161, 80, .18); }
+.dot.warn { background: var(--warn); box-shadow: 0 0 0 3px rgba(217, 119, 6, .18); }
+.dot.bad { background: var(--bad); box-shadow: 0 0 0 3px rgba(225, 29, 72, .18); }
+.dot.live { background: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, .25); animation: pulse 1.2s infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
+.lang { display: flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; background: #fff; }
+.lang button { background: none; border: 0; padding: 5px 11px; color: var(--muted); font-size: 12px; }
+.lang button[aria-pressed="true"] { background: var(--grad); color: #fff; font-weight: 700; }
+.estop {
+  display: inline-flex; align-items: center; gap: 10px; padding: 10px 22px;
+  background: linear-gradient(135deg, #ff6b5e 0%, #ef4444 50%, #dc2626 100%); color: #fff; border: 0; border-radius: 999px;
+  font-weight: 800; font-size: 15px; letter-spacing: .04em; white-space: nowrap;
+  box-shadow: 0 0 0 4px rgba(239, 68, 68, .18), 0 8px 20px rgba(239, 68, 68, .35);
+}
+.estop:hover { filter: brightness(1.06); }
+.estop:active { background: var(--stop-dark); transform: translateY(1px); }
+.estop svg { width: 18px; height: 18px; }
+
+/* ---------- 主体 ---------- */
+main {
+  display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 18px;
+  padding: 18px 20px 28px; max-width: 1600px; margin: 0 auto;
+}
+.col { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.card {
+  background: var(--panel); border: 1px solid rgba(255, 255, 255, .9); border-radius: var(--radius);
+  box-shadow: var(--shadow); backdrop-filter: blur(10px);
+}
+.card-h {
+  display: flex; align-items: center; gap: 8px; padding: 12px 16px;
+  border-bottom: 1px solid var(--line); font-weight: 800;
+}
+.card-h::before {
+  content: ""; width: 4px; height: 16px; border-radius: 2px; background: var(--grad); flex: none;
+}
+.card-h .sub { margin-left: auto; font-weight: 400; color: var(--muted); font-size: 12px; }
+.card-b { padding: 14px 16px; }
+.badge {
+  font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 999px;
+  background: #fff4e0; color: #b45309; border: 1px solid #fcd9a5; letter-spacing: .03em;
+}
+
+/* 画面 */
+.video {
+  position: relative; aspect-ratio: 16 / 9; background: #0b1b33; border-radius: var(--radius); overflow: hidden;
+  box-shadow: var(--shadow), 0 0 0 1px rgba(255, 255, 255, .9);
+}
+.video img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.video .empty {
+  position: absolute; inset: 0; display: grid; place-items: center; text-align: center;
+  color: #cfe3ff; background: linear-gradient(135deg, #12305e 0%, #1b3f7a 50%, #2a2f78 100%);
+}
+.ov { position: absolute; display: flex; gap: 8px; align-items: center; }
+.ov.tl { top: 12px; left: 12px; }
+.ov.tr { top: 12px; right: 12px; }
+.pill.clock { font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+.pill.clock .ms { opacity: .65; font-weight: 400; margin-left: 6px; }
+.ov.bl { bottom: 12px; left: 12px; }
+.ov.br { bottom: 12px; right: 12px; }
+.pill {
+  padding: 5px 12px; border-radius: 999px; background: rgba(11, 37, 69, .62); color: #fff;
+  border: 1px solid rgba(255, 255, 255, .25); font-size: 13px; font-weight: 600; backdrop-filter: blur(6px);
+}
+.pill.live { background: var(--grad); border-color: transparent; box-shadow: 0 4px 14px rgba(59, 130, 246, .45); }
+.pill.small { font-size: 11px; font-weight: 400; }
+.alert-banner {
+  position: absolute; top: 14%; left: 50%; transform: translateX(-50%);
+  display: none; align-items: center; gap: 10px; padding: 12px 24px;
+  background: linear-gradient(135deg, #ff5f6d 0%, #e11d48 100%); color: #fff; border-radius: 12px;
+  font-size: 20px; font-weight: 800; box-shadow: 0 10px 28px rgba(225, 29, 72, .45);
+  animation: pop .25s ease-out;
+}
+.alert-banner.show { display: flex; }
+@keyframes pop { from { transform: translateX(-50%) scale(.9); opacity: 0; } }
+
+/* 节目进度 */
+.timeline { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+.step {
+  position: relative; padding: 10px 12px; border-radius: 12px; background: var(--panel-2);
+  border: 1px solid var(--line); min-width: 0; transition: .2s;
+}
+.step .no { font-size: 18px; font-weight: 800; color: #9db3c9; }
+.step .nm { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.step .tag {
+  position: absolute; top: 8px; right: 8px; font-size: 10px; font-weight: 700; color: #4f46e5;
+  background: #ecebff; padding: 0 6px; border-radius: 999px;
+}
+.step.now { background: var(--grad-soft); border-color: #7cb7ff; box-shadow: 0 6px 18px rgba(59, 130, 246, .18); }
+.step.now .no { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.step.now .nm { color: var(--text); font-weight: 600; }
+.step.done .no { color: var(--ok); }
+.beatbar { height: 5px; margin-top: 8px; border-radius: 3px; background: #dcebf9; overflow: hidden; }
+.beatbar i { display: block; height: 100%; width: 0; background: var(--grad); transition: width .4s linear; }
+
+/* 事件日志 */
+.log { list-style: none; margin: 0; padding: 4px 0; max-height: 260px; overflow: auto; }
+.log li { display: grid; grid-template-columns: 64px 22px 1fr; gap: 6px; padding: 6px 16px; font-size: 13px; }
+.log li:nth-child(odd) { background: rgba(59, 130, 246, .04); }
+.log time { color: var(--muted); font-variant-numeric: tabular-nums; }
+.log .k-alert { color: var(--bad); font-weight: 700; }
+.log .k-speak { color: #2563eb; font-weight: 600; }
+.log .k-warn { color: #b45309; }
+.log .empty-log { display: block; color: var(--muted); padding: 16px; }
+
+/* 表情日志 */
+.seg.sm button { padding: 3px 10px; font-size: 12px; }
+.astats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+.astat {
+  display: grid; grid-template-columns: 32px 1fr; gap: 10px; align-items: center;
+  padding: 8px 10px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 11px;
+}
+.astat .avatar { width: 32px; height: 32px; font-size: 15px; }
+.astat .nums { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ratio { display: flex; height: 7px; border-radius: 4px; overflow: hidden; background: #dcebf9; margin-top: 5px; }
+.ratio .p { background: linear-gradient(90deg, #34d399, #12a150); }
+.ratio .n { background: linear-gradient(90deg, #fb7185, #e11d48); }
+.alog { max-height: 300px; border-top: 1px solid var(--line); }
+.alog li { grid-template-columns: 64px 26px 28px 1fr; align-items: center; }
+.alog .who {
+  width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--grad); color: #fff; font-size: 12px; font-weight: 700;
+}
+.alog .em { font-size: 20px; line-height: 1; }
+.alog .act { color: var(--muted); }
+
+/* 表单 */
+.field { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; }
+.field + .field { border-top: 1px dashed var(--line); }
+.field label, .field .lbl { color: var(--muted); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; background: #fff; }
+.seg button { background: none; border: 0; padding: 6px 12px; color: var(--muted); font-size: 13px; }
+.seg button[aria-pressed="true"] { background: var(--grad); color: #fff; font-weight: 700; }
+.switch { position: relative; width: 42px; height: 24px; flex: none; }
+.switch input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.switch span { position: absolute; inset: 0; border-radius: 999px; background: #cbdcec; transition: .2s; pointer-events: none; }
+.switch span::after {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%;
+  background: #fff; transition: .2s; box-shadow: 0 1px 3px rgba(11, 37, 69, .25);
+}
+.switch input:checked + span { background: var(--grad); }
+.switch input:checked + span::after { transform: translateX(18px); }
+.text-in {
+  width: 150px; padding: 6px 10px; background: var(--field); border: 1px solid var(--line-strong);
+  border-radius: 9px; font-variant-numeric: tabular-nums; text-align: right;
+}
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 9px 14px; border-radius: 10px; border: 1px solid var(--line-strong);
+  background: #fff; font-weight: 700; color: #1e4a7a;
+}
+.btn:hover { border-color: #7cb7ff; background: #f3f9ff; }
+.btn.primary {
+  width: 100%; padding: 12px; background: var(--grad); color: #fff; border: 0; font-size: 15px;
+  box-shadow: 0 8px 20px rgba(59, 130, 246, .35);
+}
+.btn.primary:hover { filter: brightness(1.07); background: var(--grad); }
+.btn:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; }
+.btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn-row .btn { flex: 1; }
+.robot-status {
+  display: flex; align-items: center; gap: 10px; margin: 12px 0; padding: 10px 12px;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; font-size: 13px;
+}
+.robot-status code { color: var(--muted); font-size: 11px; display: block; word-break: break-all; }
+.hint { color: var(--muted); font-size: 12px; margin: 10px 0 0; }
+.hint b { color: var(--text); }
+
+/* 参与者 */
+.people { display: flex; flex-direction: column; gap: 10px; }
+.person {
+  display: grid; grid-template-columns: 44px 1fr auto; gap: 12px; align-items: center;
+  padding: 10px 12px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px;
+}
+.person.absent { opacity: .5; }
+.person.alert { border-color: #fda4af; background: linear-gradient(135deg, #fff1f3 0%, #ffe4e8 100%); }
+.avatar {
+  width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center;
+  font-weight: 800; font-size: 20px; background: var(--grad); color: #fff;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, .3);
+}
+.person.absent .avatar { background: #c5d5e5; box-shadow: none; }
+.person { grid-template-columns: 44px 1fr auto 24px; }
+.person .meta { min-width: 0; }
+.person .nick { font-size: 12px; font-weight: 700; color: #3b5bdb; display: flex; gap: 8px; align-items: baseline; }
+.person .nick:empty { display: none; }
+.person .since { font-size: 11px; font-weight: 400; color: var(--muted); font-variant-numeric: tabular-nums; }
+.rm {
+  width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--line-strong); background: #fff;
+  color: var(--muted); font-size: 15px; line-height: 1; display: grid; place-items: center; padding: 0;
+}
+.rm:hover:not(:disabled) { color: #fff; background: var(--bad); border-color: var(--bad); }
+.rm:disabled { opacity: .3; cursor: not-allowed; }
+.card-h .btn.mini { margin-left: 10px; padding: 4px 10px; font-size: 12px; }
+.card-h .sub + .btn.mini { margin-left: 10px; }
+.add-form {
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin-bottom: 12px;
+  padding: 12px; border-radius: 12px; background: var(--grad-soft); border: 1px solid #a9cdf5;
+}
+.add-form[hidden] { display: none; }
+.af-l { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.af-grow { flex: 1; min-width: 120px; }
+.af-letter { width: 72px; text-align: left; }
+.af-nick { width: 100%; text-align: left; }
+.af-btns { display: flex; gap: 8px; width: 100%; }
+.af-btns .btn { flex: 1; }
+.af-ok { width: auto; padding: 9px 14px; font-size: 14px; }
+.af-hint { margin: 0; width: 100%; }
+.person .act { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.person .sub { color: var(--muted); font-size: 12px; }
+.emoji { font-size: 30px; line-height: 1; width: 50px; height: 50px; display: grid; place-items: center; border-radius: 50%; }
+.emoji.pos { background: radial-gradient(circle, #dcfce7 0%, #bbf7d0 100%); }
+.emoji.neg { background: radial-gradient(circle, #ffe4e6 0%, #fecdd3 100%); }
+.emoji.unk { background: #e5edf5; }
+.mood-pos { color: var(--ok); font-weight: 700; }
+.mood-neg { color: var(--bad); font-weight: 700; }
+.extra { color: var(--muted); font-size: 12px; margin-top: 4px; }
+
+/* 音乐 */
+.track {
+  display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+  background: var(--grad-soft); border: 1px solid var(--line); border-radius: 11px;
+}
+.track .ic {
+  width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center;
+  background: var(--grad); color: #fff; font-size: 18px; box-shadow: 0 4px 12px rgba(59, 130, 246, .3);
+}
+.track .nm { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.track .sub { color: var(--muted); font-size: 12px; }
+input[type=range] { accent-color: #3b82f6; width: 160px; }
+
+/* 弹窗 */
+dialog {
+  border: 1px solid var(--line); border-radius: 18px; padding: 0; background: #fff;
+  color: var(--text); width: min(520px, calc(100vw - 32px)); box-shadow: 0 24px 60px rgba(11, 37, 69, .25);
+}
+dialog::backdrop { background: rgba(14, 42, 84, .35); backdrop-filter: blur(3px); }
+.dlg-h { padding: 18px 22px 6px; font-size: 18px; font-weight: 800; display: flex; gap: 10px; align-items: center; }
+.dlg-b { padding: 6px 22px 8px; color: #334e6b; }
+.dlg-f { padding: 14px 22px 20px; display: flex; gap: 10px; justify-content: flex-end; }
+.checklist { list-style: none; padding: 0; margin: 12px 0; display: flex; flex-direction: column; gap: 8px; }
+.checklist label {
+  display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; background: var(--panel-2);
+  border: 1px solid var(--line); border-radius: 10px; cursor: pointer;
+}
+.checklist label:has(input:checked) { background: var(--grad-soft); border-color: #7cb7ff; }
+.checklist input { margin-top: 3px; accent-color: #3b82f6; width: 16px; height: 16px; flex: none; }
+dialog.stop { border: 2px solid #fca5a5; }
+dialog.stop .dlg-h { color: #dc2626; font-size: 22px; }
+.stop-box {
+  margin: 10px 0; padding: 14px; border-radius: 12px; font-size: 15px; color: #7f1d1d;
+  background: linear-gradient(135deg, #fff1f2 0%, #ffe4e6 100%); border: 1px solid #fecdd3;
+}
+.stop-box strong { display: block; font-size: 17px; color: #b91c1c; margin-bottom: 4px; }
+
+/* 提示条 */
+.toast {
+  position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px);
+  padding: 10px 18px; border-radius: 12px; background: #0b2545; color: #fff;
+  box-shadow: 0 12px 28px rgba(11, 37, 69, .35); opacity: 0; pointer-events: none; transition: .25s; z-index: 50;
+  max-width: calc(100vw - 32px);
+}
+.toast.show { opacity: 1; transform: translateX(-50%); }
+.toast.err { background: linear-gradient(135deg, #ff5f6d 0%, #e11d48 100%); }
+
+@media (max-width: 1100px) {
+  main { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 640px) {
+  header { flex-wrap: wrap; gap: 8px 10px; padding: 10px 16px; }
+  .brand { font-size: 14px; flex: 1; min-width: 0; }
+  .brand span:last-child { overflow: hidden; text-overflow: ellipsis; }
+  .chips { order: 3; flex-basis: 100%; }
+  .alert-banner { font-size: 15px; padding: 8px 14px; white-space: nowrap; }
+  .text-in { width: 130px; }
+  main { padding: 12px 16px; }
+  .timeline { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
+  .step { padding: 8px 6px; }
+  .step .nm, .step .tag { display: none; }
+  .estop { padding: 8px 16px; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand"><span class="brand-mark">◎</span><span data-i18n="title">体操コーチ コンソール</span></div>
+  <div class="chips">
+    <span class="chip"><span class="dot" id="dot-server"></span><span data-i18n="chip_server">サーバー</span></span>
+    <span class="chip"><span class="dot" id="dot-cam"></span><span data-i18n="chip_cam">カメラ</span></span>
+    <span class="chip"><span class="dot" id="dot-show"></span><span id="chip-show" data-i18n="show_idle">演出 待機中</span></span>
+    <span class="chip"><span class="dot" id="dot-robot"></span><span id="chip-robot" data-i18n="robot_off">演出プログラム 未起動</span></span>
+    <span class="chip" id="chip-model" title="">VLM —</span>
+  </div>
+  <div class="lang" role="group" aria-label="language">
+    <button data-lang="ja" aria-pressed="true">日本語</button>
+    <button data-lang="zh" aria-pressed="false">中文</button>
+    <button data-lang="en" aria-pressed="false">EN</button>
+  </div>
+  <button class="estop" id="btn-estop" aria-haspopup="dialog">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M8 2h8l6 6v8l-6 6H8l-6-6V8z"/><path d="M8 12h8"/></svg>
+    <span data-i18n="estop">緊急停止</span>
+  </button>
+</header>
+
+<main>
+  <section class="col">
+    <div class="video">
+      <img id="stream" alt="" src="/stream.mjpg">
+      <div class="empty" id="video-empty" data-i18n="no_video">カメラ映像を待っています…</div>
+      <div class="ov tl"><span class="pill" id="status-pill">—</span></div>
+      <div class="ov tr"><time class="pill clock" id="clock"></time></div>
+      <div class="ov bl"><span class="pill small" id="people-age"></span></div>
+      <div class="ov br"><span class="pill small" id="judge-pill"></span></div>
+      <div class="alert-banner" id="alert-banner" role="alert">⚠ <span id="alert-text"></span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-h"><span data-i18n="program">プログラム</span><span class="sub" id="beat-text"></span></div>
+      <div class="card-b"><div class="timeline" id="timeline"></div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-h"><span data-i18n="events">イベントログ</span><span class="sub" data-i18n="events_sub">判定・読み上げ・アラート</span></div>
+      <ul class="log" id="log"></ul>
+    </div>
+
+    <div class="card">
+      <div class="card-h"><span data-i18n="affect_log">表情ログ</span>
+        <span class="sub" id="affect-count"></span>
+        <div class="seg" id="seg-affect" style="margin-left:12px"></div>
+      </div>
+      <div class="card-b" style="padding-bottom:6px"><div class="astats" id="affect-stats"></div></div>
+      <ul class="log alog" id="affect-log"></ul>
+    </div>
+  </section>
+
+  <aside class="col">
+    <!-- 演出程序(实际可用) -->
+    <div class="card">
+      <div class="card-h"><span data-i18n="robot_card">ロボット演出プログラム</span><span class="sub">demo_robot.py</span></div>
+      <div class="card-b">
+        <div class="field"><span class="lbl" data-i18n="speed">速度上限</span>
+          <div class="seg" id="seg-speed">
+            <button data-v="10" aria-pressed="true" data-i18n="speed_test">10°/s テスト</button>
+            <button data-v="45" aria-pressed="false" data-i18n="speed_show">45°/s 本番</button>
+          </div>
+        </div>
+        <div class="field"><label for="opt-waist" data-i18n="waist">腰 roll/pitch を許可(④⑤)</label>
+          <span class="switch"><input type="checkbox" id="opt-waist"><span></span></span></div>
+        <div class="field"><label for="opt-speaker" data-i18n="speaker">G1 スピーカーで音声</label>
+          <span class="switch"><input type="checkbox" id="opt-speaker" checked><span></span></span></div>
+        <div class="field"><label for="opt-bgm" data-i18n="bgm">BGM を再生</label>
+          <span class="switch"><input type="checkbox" id="opt-bgm" checked><span></span></span></div>
+        <div class="field"><label for="opt-iface" data-i18n="iface">PC 側 IP</label>
+          <input class="text-in" id="opt-iface" value="192.168.123.222" inputmode="decimal" spellcheck="false"></div>
+        <div class="field"><label for="opt-dof">DOF</label>
+          <select class="text-in" id="opt-dof"><option>29</option><option>23</option></select></div>
+
+        <div class="robot-status"><span class="dot" id="dot-robot2"></span>
+          <div><span id="robot-status-text" data-i18n="robot_off">演出プログラム 未起動</span><code id="robot-cmd"></code></div></div>
+        <button class="btn primary" id="btn-launch" data-i18n="launch">▶ 演出プログラムを起動</button>
+        <p class="hint" data-i18n-html="launch_hint">起動すると別ウィンドウのコンソールが開きます。<b>ENABLE REAL ROBOT</b> と各動作の <b>RUN コード</b>はそのウィンドウで入力してください。</p>
+      </div>
+    </div>
+
+    <!-- 参与者 -->
+    <div class="card">
+      <div class="card-h"><span data-i18n="people">参加者</span><span class="sub" id="people-sub"></span>
+        <button class="btn mini" id="btn-add-person" aria-expanded="false" data-i18n="add_person">＋ 追加</button></div>
+      <div class="card-b">
+        <form class="add-form" id="add-form" hidden>
+          <label class="af-l"><span data-i18n="letter">名札の文字</span>
+            <select class="text-in af-letter" id="add-letter"></select></label>
+          <label class="af-l af-grow"><span data-i18n="nickname">呼び名(任意)</span>
+            <input class="text-in af-nick" id="add-nick" maxlength="20" autocomplete="off" data-i18n-ph="nickname_ph"></label>
+          <div class="af-btns">
+            <button type="button" class="btn" id="add-cancel" data-i18n="cancel">キャンセル</button>
+            <button type="submit" class="btn primary af-ok" data-i18n="add_ok">追加する</button>
+          </div>
+          <p class="hint af-hint" data-i18n="add_hint">胸に貼る大きな文字で本人を識別します。並び順=画面の左から右(文字が読めない時の目安)。音声は「○さん」と文字で呼びます。</p>
+        </form>
+        <div class="people" id="people"></div>
+        <div class="extra" id="people-extra"></div></div>
+    </div>
+
+    <!-- 音乐(UI) -->
+    <div class="card">
+      <div class="card-h"><span data-i18n="music">音楽</span><span class="badge" data-i18n="ui_only">UIのみ</span></div>
+      <div class="card-b">
+        <div class="track"><span class="ic">♪</span>
+          <div style="min-width:0"><div class="nm" id="track-name">bgm.mp3</div>
+            <div class="sub" data-i18n="track_sub">演出開始と同時に再生 · 終了時フェードアウト</div></div></div>
+        <div class="field"><span class="lbl" data-i18n="volume">音量</span>
+          <input type="range" id="vol" min="0" max="1000" step="50" value="400" aria-label="volume"></div>
+        <div class="btn-row">
+          <button class="btn" id="btn-import" data-i18n="import">⤒ 音楽をインポート</button>
+        </div>
+        <input type="file" id="file-music" accept="audio/*,video/mp4" hidden>
+      </div>
+    </div>
+
+    <!-- 报告:打开 /report(目前为虚拟示例数据) -->
+    <div class="card">
+      <div class="card-h"><span data-i18n="report">セッションレポート</span><span class="badge" data-i18n="sample_badge">サンプル</span></div>
+      <div class="card-b">
+        <p class="hint" style="margin:0 0 12px" data-i18n="report_sub">参加人数・各節の判定・声かけ内容・動きが小さかった方をまとめます。</p>
+        <button class="btn primary" id="btn-report" style="margin-bottom:8px" data-i18n="open_report">▦ レポートを開く</button>
+        <div class="btn-row">
+          <button class="btn report-dl" data-fmt="pdf">⤓ PDF</button>
+          <button class="btn report-dl" data-fmt="csv">⤓ CSV</button>
+          <button class="btn report-dl" data-fmt="json">⤓ JSON</button>
+        </div>
+      </div>
+    </div>
+  </aside>
+</main>
+
+<!-- 启动前安全确认 -->
+<dialog id="dlg-launch">
+  <form method="dialog">
+    <div class="dlg-h">⚠ <span data-i18n="confirm_title">起動前の安全確認</span></div>
+    <div class="dlg-b">
+      <ul class="checklist">
+        <li><label><input type="checkbox" class="chk"><span data-i18n="chk1">G1 は EDU 版で、DOF 設定が正しい</span></label></li>
+        <li><label><input type="checkbox" class="chk"><span data-i18n="chk2">転倒防止(架台/吊り)を装着し、周囲に人や障害物がない</span></label></li>
+        <li><label><input type="checkbox" class="chk"><span data-i18n="chk3">操作者が実機の非常停止/リモコンを常に握っている</span></label></li>
+        <li><label><input type="checkbox" class="chk"><span data-i18n="chk4">arm_sdk と競合する制御プログラムが動いていない</span></label></li>
+      </ul>
+      <div id="launch-summary" class="hint"></div>
+    </div>
+    <div class="dlg-f">
+      <button class="btn" value="cancel" data-i18n="cancel">キャンセル</button>
+      <button class="btn primary" style="width:auto" id="btn-launch-ok" value="ok" disabled data-i18n="launch_ok">起動する</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- 紧急停止(UI,未接入) -->
+<dialog id="dlg-stop" class="stop">
+  <form method="dialog">
+    <div class="dlg-h">⛔ <span data-i18n="estop">緊急停止</span></div>
+    <div class="dlg-b">
+      <div class="stop-box"><strong data-i18n="stop_now">直ちに実機の非常停止ボタン/リモコンを使用してください。</strong>
+        <span data-i18n="stop_not_wired">このボタンはまだロボット制御に接続されていません(UIのみ)。押してもロボットは止まりません。</span></div>
+      <p class="hint" data-i18n="stop_ctrlc">ソフト側の中断:演出プログラムのコンソールで Ctrl+C(arm_sdk の重みを解放。実機非常停止の代わりにはなりません)。</p>
+    </div>
+    <div class="dlg-f"><button class="btn" value="close" data-i18n="close">閉じる</button></div>
+  </form>
+</dialog>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+const I18N = {
+  ja: {
+    title: "体操コーチ コンソール", chip_server: "サーバー", chip_cam: "カメラ",
+    show_idle: "演出 待機中", show_live: "演出中", robot_off: "演出プログラム 未起動",
+    robot_on: "演出プログラム 実行中", robot_exit: "演出プログラム 終了", estop: "緊急停止",
+    no_video: "カメラ映像を待っています…", program: "プログラム", events: "イベントログ",
+    events_sub: "判定・読み上げ・アラート", robot_card: "ロボット演出プログラム",
+    speed: "速度上限", speed_test: "10°/s テスト", speed_show: "45°/s 本番",
+    waist: "腰 roll/pitch を許可(④⑤)", speaker: "G1 スピーカーで音声", bgm: "BGM を再生",
+    iface: "PC 側 IP", launch: "▶ 演出プログラムを起動", launch_running: "実行中…",
+    launch_hint: "起動すると別ウィンドウのコンソールが開きます。<b>ENABLE REAL ROBOT</b> と各動作の <b>RUN コード</b>はそのウィンドウで入力してください。",
+    people: "参加者", music: "音楽", ui_only: "UIのみ", track_sub: "演出開始と同時に再生 · 終了時フェードアウト",
+    volume: "音量", import: "⤒ 音楽をインポート", report: "セッションレポート",
+    report_sub: "参加人数・各節の判定・声かけ内容・動きが小さかった方をまとめます。",
+    sample_badge: "サンプル", open_report: "▦ レポートを開く",
+    confirm_title: "起動前の安全確認",
+    chk1: "G1 は EDU 版で、DOF 設定が正しい", chk2: "転倒防止(架台/吊り)を装着し、周囲に人や障害物がない",
+    chk3: "操作者が実機の非常停止/リモコンを常に握っている", chk4: "arm_sdk と競合する制御プログラムが動いていない",
+    cancel: "キャンセル", launch_ok: "起動する", close: "閉じる",
+    stop_now: "直ちに実機の非常停止ボタン/リモコンを使用してください。",
+    stop_not_wired: "このボタンはまだロボット制御に接続されていません(UIのみ)。押してもロボットは止まりません。",
+    stop_ctrlc: "ソフト側の中断:演出プログラムのコンソールで Ctrl+C(arm_sdk の重みを解放。実機非常停止の代わりにはなりません)。",
+    waiting: "開始待ち", judging: "判定中…", not_moving: "が動いていません",
+    absent: "未検出", unknown_face: "表情 判別不可", moving_no: "動きなし", ok: "OK",
+    updated: "標注 {s} 秒前", paused: "演出中は標注を一時停止", no_people: "まだ誰も検出されていません",
+    unknown_people: "名札なしの人物 {n} 名", judge_last: "最新判定 {k}", empty_log: "まだイベントはありません",
+    ui_toast: "UIプレビュー:この機能はまだ接続されていません", import_toast: "「{f}」を選択(UIプレビュー:まだ読み込みません)",
+    launched: "演出プログラムを起動しました(PID {p})。コンソールで確認コードを入力してください。",
+    server_down: "コンソールサーバーに接続できません", elapsed: "経過 {t}", exit_code: "終了コード {c}",
+    summary: "速度 {s}°/s · 腰 {w} · スピーカー {sp} · BGM {b}", on: "ON", off: "OFF",
+    judged: "判定", beat: "{b} 拍",
+    affect_log: "表情ログ", all: "全員", affect_count: "{n} 件", pos_word: "ポジティブ", neg_word: "ネガティブ",
+    no_affect: "まだ表情の記録はありません(A/B の名札が見え、顔が判別できた時に記録)",
+    pos_ratio: "ポジティブ {p}%", n_pos: "ポジ {n}", n_neg: "ネガ {n}",
+    add_person: "＋ 追加", letter: "名札の文字", nickname: "呼び名(任意)", nickname_ph: "例:田中さん",
+    add_ok: "追加する", add_hint: "胸に貼る大きな文字で本人を識別します。並び順=画面の左から右(文字が読めない時の目安)。音声は「○さん」と文字で呼びます。",
+    added_at: "追加 {t}", remove: "{n} を削除", remove_confirm: "参加者 {n} を削除しますか?", added: "{n} を追加しました", removed: "{n} を削除しました",
+  },
+  zh: {
+    title: "体操教练 控制台", chip_server: "服务器", chip_cam: "摄像头",
+    show_idle: "演出 待机", show_live: "演出中", robot_off: "演出程序 未启动",
+    robot_on: "演出程序 运行中", robot_exit: "演出程序 已退出", estop: "紧急停止",
+    no_video: "正在等待摄像头画面…", program: "节目进度", events: "事件日志",
+    events_sub: "评判·语音·提醒", robot_card: "机器人演出程序",
+    speed: "速度上限", speed_test: "10°/s 测试", speed_show: "45°/s 正式",
+    waist: "允许腰部 roll/pitch(④⑤)", speaker: "用 G1 扬声器播语音", bgm: "播放 BGM",
+    iface: "电脑网卡 IP", launch: "▶ 启动演出程序", launch_running: "运行中…",
+    launch_hint: "启动后会弹出一个新的控制台窗口。<b>ENABLE REAL ROBOT</b> 和每个动作的 <b>RUN 确认码</b>请在那个窗口里输入。",
+    people: "参与者", music: "音乐", ui_only: "仅界面", track_sub: "演出开始时同步播放 · 结束时淡出",
+    volume: "音量", import: "⤒ 导入音乐", report: "场次报告",
+    report_sub: "汇总参与人数、各节评判、语音点评内容和动作偏小的人。",
+    sample_badge: "示例", open_report: "▦ 打开报告",
+    confirm_title: "启动前安全确认",
+    chk1: "G1 为 EDU 版本，DOF 参数正确", chk2: "已装好防倒架/吊索，周围无人和障碍物",
+    chk3: "操作者全程握住实体急停/遥控器", chk4: "没有与 arm_sdk 冲突的控制程序在运行",
+    cancel: "取消", launch_ok: "启动", close: "关闭",
+    stop_now: "请立即使用实体急停按钮/遥控器。",
+    stop_not_wired: "这个按钮还没有接入机器人控制(仅界面)，按下后机器人不会停止。",
+    stop_ctrlc: "软件中断：在演出程序的控制台按 Ctrl+C(释放 arm_sdk 权重，不能替代实体急停)。",
+    waiting: "等待开始", judging: "评判中…", not_moving: "没有在动",
+    absent: "未检测到", unknown_face: "表情 看不清", moving_no: "没在动", ok: "OK",
+    updated: "标注 {s} 秒前", paused: "演出中标注暂停", no_people: "还没有检测到人",
+    unknown_people: "未贴字母的人 {n} 名", judge_last: "最近评判 {k}", empty_log: "还没有事件",
+    ui_toast: "界面预览：这个功能还没有接入", import_toast: "已选择「{f}」(界面预览：暂不导入)",
+    launched: "已启动演出程序(PID {p})，请在控制台输入确认码。",
+    server_down: "连接不上控制台服务", elapsed: "已运行 {t}", exit_code: "退出码 {c}",
+    summary: "速度 {s}°/s · 腰 {w} · 扬声器 {sp} · BGM {b}", on: "开", off: "关",
+    judged: "评判", beat: "第 {b} 拍",
+    affect_log: "表情日志", all: "全部", affect_count: "{n} 条", pos_word: "积极", neg_word: "消极",
+    no_affect: "还没有表情记录(看到 A/B 的字母且能看清脸时才记录)",
+    pos_ratio: "积极 {p}%", n_pos: "积极 {n}", n_neg: "消极 {n}",
+    add_person: "＋ 添加", letter: "胸前字母", nickname: "昵称(可选)", nickname_ph: "例:田中",
+    add_ok: "添加", add_hint: "靠胸前贴的大字母认人。排列顺序=画面从左到右(看不清字母时作参考)。语音按字母叫「○さん」。",
+    added_at: "添加于 {t}", remove: "删除 {n}", remove_confirm: "确定删除参与者 {n} 吗?", added: "已添加 {n}", removed: "已删除 {n}",
+  },
+  en: {
+    title: "Taiso Coach Console", chip_server: "Server", chip_cam: "Camera",
+    show_idle: "Show idle", show_live: "Show live", robot_off: "Robot program not running",
+    robot_on: "Robot program running", robot_exit: "Robot program exited", estop: "E-STOP",
+    no_video: "Waiting for camera feed…", program: "Program", events: "Event log",
+    events_sub: "Judgments · speech · alerts", robot_card: "Robot show program",
+    speed: "Speed limit", speed_test: "10°/s Test", speed_show: "45°/s Show",
+    waist: "Allow waist roll/pitch (④⑤)", speaker: "Voice on G1 speaker", bgm: "Play BGM",
+    iface: "PC interface IP", launch: "▶ Launch robot program", launch_running: "Running…",
+    launch_hint: "A separate console window will open. Type <b>ENABLE REAL ROBOT</b> and each motion's <b>RUN code</b> in that window.",
+    people: "Participants", music: "Music", ui_only: "UI only", track_sub: "Starts with the show · fades out at the end",
+    volume: "Volume", import: "⤒ Import music", report: "Session report",
+    report_sub: "Headcount, per-section judgments, spoken feedback, and who moved less.",
+    sample_badge: "Sample", open_report: "▦ Open report",
+    confirm_title: "Pre-launch safety check",
+    chk1: "G1 is an EDU unit and the DOF setting is correct", chk2: "Fall protection (frame/harness) is on; no people or obstacles nearby",
+    chk3: "An operator is holding the physical E-stop / remote at all times", chk4: "No other controller is conflicting with arm_sdk",
+    cancel: "Cancel", launch_ok: "Launch", close: "Close",
+    stop_now: "Use the robot's physical E-stop button / remote immediately.",
+    stop_not_wired: "This button is not connected to robot control yet (UI only). Pressing it will NOT stop the robot.",
+    stop_ctrlc: "Software interrupt: press Ctrl+C in the robot program's console (releases arm_sdk weight; not a substitute for the physical E-stop).",
+    waiting: "Waiting to start", judging: "Judging…", not_moving: "not moving",
+    absent: "Not detected", unknown_face: "Expression unclear", moving_no: "not moving", ok: "OK",
+    updated: "Labels {s}s ago", paused: "Labels paused during the show", no_people: "No one detected yet",
+    unknown_people: "{n} person(s) without a letter tag", judge_last: "Last judged {k}", empty_log: "No events yet",
+    ui_toast: "UI preview: this feature is not connected yet", import_toast: "Selected “{f}” (UI preview: not imported yet)",
+    launched: "Robot program launched (PID {p}). Enter the confirmation codes in its console.",
+    server_down: "Cannot reach the console server", elapsed: "Elapsed {t}", exit_code: "Exit code {c}",
+    summary: "Speed {s}°/s · Waist {w} · Speaker {sp} · BGM {b}", on: "ON", off: "OFF",
+    judged: "Judged", beat: "Beat {b}",
+    affect_log: "Expression log", all: "All", affect_count: "{n} entries", pos_word: "Positive", neg_word: "Negative",
+    no_affect: "No expressions logged yet (logged when an A/B tag is visible and the face is readable)",
+    pos_ratio: "Positive {p}%", n_pos: "Pos {n}", n_neg: "Neg {n}",
+    add_person: "＋ Add", letter: "Tag letter", nickname: "Nickname (optional)", nickname_ph: "e.g. Tanaka",
+    add_ok: "Add", add_hint: "People are identified by the large letter on their chest. Order = left to right on screen (fallback when the letter is unreadable). Voice calls them by letter, e.g. “A-san”.",
+    added_at: "Added {t}", remove: "Remove {n}", remove_confirm: "Remove participant {n}?", added: "Added {n}", removed: "Removed {n}",
+  },
+};
+const LANGS = ["ja", "zh", "en"];
+const HTML_LANG = { ja: "ja", zh: "zh-CN", en: "en" };
+// 演出的五节(与 demo_viewer 编排一致);judged 由服务端 sections 决定
+const STEPS = [
+  { no: "①", prefix: "1_", ja: "背伸び", zh: "伸展", en: "Stretch" },
+  { no: "②", prefix: "2_", ja: "腕の運動", zh: "摆臂", en: "Arm swing" },
+  { no: "③", prefix: "3_", ja: "腕を回す", zh: "抡臂", en: "Arm circles" },
+  { no: "④", prefix: "4_", ja: "胸をそらす", zh: "扩胸", en: "Chest opener" },
+  { no: "⑤", prefix: "5_", ja: "体を横に曲げる", zh: "体侧屈", en: "Side bend" },
+];
+const ISSUE_TEXT = {
+  ja: { circle_small: "円が小さい", chest_closed: "胸が閉じている", arms_low: "腕が低い", bend_small: "曲げが小さい", lean_forward: "前かがみ" },
+  zh: { circle_small: "圈太小", chest_closed: "胸没打开", arms_low: "手臂太低", bend_small: "侧弯太小", lean_forward: "往前弯腰" },
+  en: { circle_small: "circles too small", chest_closed: "chest not open", arms_low: "arms too low", bend_small: "bend too small", lean_forward: "leaning forward" },
+};
+// PGC-ARS 情绪类别、动作:服务端键是中文,日语名由服务端给(affects[].ja / actions_ja)
+const AFFECT_EN = { "愉悦": "Pleasure", "兴趣": "Interest", "满足": "Contentment", "愤怒": "Anger", "焦虑": "Anxiety", "悲伤": "Sadness" };
+const ACTION_EN = {
+  "站立": "Standing", "双臂上举": "Arms raised", "双臂侧平举": "Arms out (T)", "抡臂": "Arm circles",
+  "扩胸后仰": "Chest opener", "体侧屈": "Side bend", "弯腰前倾": "Leaning forward", "挥手": "Waving",
+  "走动": "Walking", "其他": "Other",
+};
+const LOG_ICON = { alert: "⚠", speak: "🔊", judge: "⚖", section: "▶", warn: "⏱", info: "•" };
+const actionName = (k) => lang === "ja" ? ((S && S.actions_ja[k]) || k) : lang === "en" ? (ACTION_EN[k] || k) : k;
+const affectName = (k) => lang === "ja" ? ((S && S.affects[k] && S.affects[k].ja) || k) : lang === "en" ? (AFFECT_EN[k] || k) : k;
+const moodWord = (m) => t(m === "积极" ? "pos_word" : "neg_word");
+
+let lang = (() => {   // 优先 URL ?lang=en,其次上次的选择,默认日语
+  const q = new URLSearchParams(location.search).get("lang");
+  if (LANGS.includes(q)) return q;
+  try { const v = localStorage.getItem("coach-lang"); return LANGS.includes(v) ? v : "ja"; } catch { return "ja"; }
+})();
+let S = null;          // 最近一次 /api/state
+let speed = 10;
+let affectFilter = "*";   // 表情日志筛选:* = 全员
+const $ = (id) => document.getElementById(id);
+const t = (k, vars = {}) => (I18N[lang][k] ?? k).replace(/\{(\w+)\}/g, (_, v) => vars[v] ?? "");
+
+function applyLang() {
+  document.documentElement.lang = HTML_LANG[lang];
+  document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll("[data-i18n-html]").forEach((el) => { el.innerHTML = t(el.dataset.i18nHtml); });
+  document.querySelectorAll("[data-i18n-ph]").forEach((el) => { el.placeholder = t(el.dataset.i18nPh); });
+  ["people", "seg-affect"].forEach((id) => { $(id).dataset.html = ""; });   // 切语言后强制重画
+  document.querySelectorAll(".lang button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.lang === lang)));
+  document.title = t("title");
+  if (S) render(S);
+}
+document.querySelectorAll(".lang button").forEach((b) => b.addEventListener("click", () => {
+  lang = b.dataset.lang; try { localStorage.setItem("coach-lang", lang); } catch {}
+  applyLang();
+}));
+
+let toastTimer;
+function toast(msg, err = false) {
+  const el = $("toast"); el.textContent = msg; el.classList.toggle("err", err); el.classList.add("show");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove("show"), 3200);
+}
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const fmtTime = (ts) => new Date(ts * 1000).toLocaleTimeString("ja-JP", { hour12: false });
+const pad2 = (x) => String(x).padStart(2, "0");
+const fmtFull = (ts) => { const d = new Date(ts * 1000);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`; };
+const fmtShort = (ts) => { const d = new Date(ts * 1000);
+  return `${d.getMonth() + 1}/${d.getDate()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
+const fmtDur = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+const setDot = (id, cls) => { $(id).className = "dot " + (cls || ""); };
+
+/* ---------- 渲染 ---------- */
+function render(s) {
+  // 顶栏
+  setDot("dot-server", "ok");
+  setDot("dot-cam", s.camera_ok ? "ok" : "bad");
+  setDot("dot-show", s.clock_active ? "live" : "");
+  $("chip-show").textContent = t(s.clock_active ? "show_live" : "show_idle");
+  const r = s.robot || {};
+  const rCls = r.running ? "live" : (r.exit_code != null ? "warn" : "");
+  setDot("dot-robot", rCls); setDot("dot-robot2", rCls);
+  const rTxt = t(r.running ? "robot_on" : (r.exit_code != null ? "robot_exit" : "robot_off"));
+  $("chip-robot").textContent = rTxt;
+  $("chip-model").textContent = `VLM ${s.models.preview}`;
+  $("chip-model").title = `judge: ${s.models.judge} / preview: ${s.models.preview}`;
+
+  // 画面
+  $("video-empty").style.display = s.camera_ok ? "none" : "grid";
+  let statusTxt = t("waiting");
+  if (s.judging) statusTxt = t("judging");
+  else if (s.clock_active && s.section) statusTxt = s.section + (s.beat != null ? ` · ${t("beat", { b: s.beat.toFixed(1) })}` : "");
+  $("status-pill").textContent = statusTxt;
+  $("status-pill").classList.toggle("live", !!s.clock_active);
+  $("people-age").textContent = s.clock_active ? t("paused")
+    : (s.people_age != null ? t("updated", { s: Math.round(s.people_age) }) : "");
+  $("judge-pill").textContent = s.last_judge && s.last_judge.section ? t("judge_last", { k: s.last_judge.section }) : "";
+  $("judge-pill").style.display = $("judge-pill").textContent ? "" : "none";
+  $("people-age").style.display = $("people-age").textContent ? "" : "none";
+  const banner = $("alert-banner");
+  banner.classList.toggle("show", s.alert.length > 0);
+  $("alert-text").textContent = s.alert.length ? `${s.alert.join(", ")} ${t("not_moving")}` : "";
+
+  // 节目进度
+  const judgedKeys = new Set(s.sections.map((x) => x.key));
+  const curIdx = s.clock_active && s.section ? STEPS.findIndex((st) => s.section.startsWith(st.prefix)) : -1;
+  $("timeline").innerHTML = STEPS.map((st, i) => {
+    const judged = [...judgedKeys].some((k) => k.startsWith(st.prefix));
+    const cls = i === curIdx ? "now" : (curIdx > i ? "done" : "");
+    const pct = i === curIdx && s.beat != null ? Math.min(100, (s.beat / 16) * 100) : (curIdx > i ? 100 : 0);
+    return `<div class="step ${cls}"><div class="no">${st.no}</div><div class="nm">${esc(st[lang])}</div>`
+      + (judged ? `<span class="tag">${t("judged")}</span>` : "")
+      + `<div class="beatbar"><i style="width:${pct}%"></i></div></div>`;
+  }).join("");
+  $("beat-text").textContent = curIdx >= 0 && s.beat != null ? t("beat", { b: s.beat.toFixed(1) }) : "";
+
+  // 参与者
+  const byName = {}; let unknown = 0;
+  s.people.forEach((p) => { if (s.names.includes(p.name)) byName[p.name] = p; else unknown++; });
+  const judge = {}; (s.last_judge.results || []).forEach((x) => { judge[x.name] = x; });
+  const peopleHtml = s.names.map((n) => {
+    const p = byName[n]; const j = judge[n];
+    const nick = (s.nicknames || {})[n];
+    const since = (s.added_at || {})[n];
+    const alert = s.alert.includes(n);
+    const aff = p && s.affects[p.affect];
+    const emoji = aff ? aff.emoji : "❔";
+    const ecls = aff ? (aff.mood === "积极" ? "pos" : "neg") : "unk";
+    const act = p ? actionName(p.action) : t("absent");
+    const moodTxt = aff ? `<span class="${aff.mood === "积极" ? "mood-pos" : "mood-neg"}">${esc(moodWord(aff.mood))}</span> · ${esc(affectName(p.affect))}` : t("unknown_face");
+    let jTxt = "";
+    if (j) jTxt = ` · ${t("judged")}: ${!j.moving ? t("moving_no") : (j.ok ? t("ok") : (ISSUE_TEXT[lang][j.issue] || j.issue))}`;
+    return `<div class="person ${p ? "" : "absent"} ${alert ? "alert" : ""}">
+      <div class="avatar">${esc(n)}</div>
+      <div class="meta"><div class="nick">${nick ? esc(nick) : ""}${since ? `<span class="since" title="${esc(fmtFull(since))}">${esc(t("added_at", { t: fmtShort(since) }))}</span>` : ""}</div><div class="act">${esc(act)}</div><div class="sub">${p ? moodTxt : ""}${esc(jTxt)}</div></div>
+      <div class="emoji ${ecls}" aria-hidden="true">${emoji}</div>
+      <button class="rm" data-n="${esc(n)}" ${s.names.length <= 1 ? "disabled" : ""} aria-label="${esc(t("remove", { n }))}" title="${esc(t("remove", { n }))}">×</button></div>`;
+  }).join("");
+  if ($("people").dataset.html !== peopleHtml) {   // 内容没变不重画,避免吞掉点击
+    $("people").innerHTML = peopleHtml; $("people").dataset.html = peopleHtml;
+  }
+  $("btn-add-person").disabled = s.names.length >= (s.max_participants || 8);
+  $("people-sub").textContent = `${Object.keys(byName).length} / ${s.names.length}`;
+  $("people-extra").textContent = unknown ? t("unknown_people", { n: unknown })
+    : (s.people.length === 0 && !s.clock_active ? t("no_people") : "");
+
+  // 日志(新的在上)
+  const ev = [...s.events].reverse();
+  $("log").innerHTML = ev.length ? ev.map((e) => `<li><time datetime="${new Date(e.t * 1000).toISOString()}" title="${fmtFull(e.t)}">${fmtTime(e.t)}</time><span>${LOG_ICON[e.kind] || "•"}</span>`
+    + `<span class="k-${e.kind}">${esc(e.text)}</span></li>`).join("")
+    : `<li><span class="empty-log">${t("empty_log")}</span></li>`;
+
+  // 表情日志:筛选按钮 + 每人积极比例 + 明细(新的在上)
+  const filters = ["*", ...s.names];
+  if (!filters.includes(affectFilter)) affectFilter = "*";
+  $("seg-affect").className = "seg sm";
+  const segHtml = filters.map((f) =>
+    `<button data-f="${esc(f)}" aria-pressed="${f === affectFilter}">${f === "*" ? t("all") : esc(f)}</button>`).join("");
+  if ($("seg-affect").dataset.html !== segHtml) {   // 内容没变不重画,避免吞掉点击
+    $("seg-affect").innerHTML = segHtml; $("seg-affect").dataset.html = segHtml;
+  }
+  $("affect-stats").innerHTML = s.names.map((n) => {
+    const st = (s.affect_stats || {})[n] || { pos: 0, neg: 0 };
+    const tot = st.pos + st.neg;
+    const pp = tot ? Math.round((st.pos / tot) * 100) : 0;
+    return `<div class="astat"><div class="avatar">${esc(n)}</div><div>
+      <div class="nums"><span>${tot ? t("pos_ratio", { p: pp }) : "—"}</span>
+        <span>${t("n_pos", { n: st.pos })} · ${t("n_neg", { n: st.neg })}</span></div>
+      <div class="ratio">${tot ? `<i class="p" style="width:${pp}%"></i><i class="n" style="width:${100 - pp}%"></i>` : ""}</div>
+    </div></div>`;
+  }).join("");
+  const alog = (s.affect_log || []).filter((e) => affectFilter === "*" || e.name === affectFilter).reverse();
+  $("affect-count").textContent = t("affect_count", { n: (s.affect_log || []).length });
+  $("affect-log").innerHTML = alog.length ? alog.map((e) => {
+    const a = s.affects[e.affect] || {};
+    const pos = e.mood === "积极";
+    const aName = affectName(e.affect);
+    const act = actionName(e.action);
+    return `<li><time datetime="${new Date(e.t * 1000).toISOString()}" title="${fmtFull(e.t)}">${fmtTime(e.t)}</time><span class="who">${esc(e.name)}</span>`
+      + `<span class="em">${a.emoji || "❔"}</span>`
+      + `<span><span class="${pos ? "mood-pos" : "mood-neg"}">${t(pos ? "pos_word" : "neg_word")}</span>`
+      + ` · ${esc(aName)} <span class="act">· ${esc(act)}</span></span></li>`;
+  }).join("") : `<li><span class="empty-log">${t("no_affect")}</span></li>`;
+
+  // 演出程序
+  const btn = $("btn-launch");
+  btn.disabled = !!r.running;
+  btn.textContent = r.running ? t("launch_running") : t("launch");
+  let st = rTxt;
+  if (r.running && r.started_at) st += ` · PID ${r.pid} · ${t("elapsed", { t: fmtDur(s.now - r.started_at) })}`;
+  else if (r.exit_code != null) st += ` · ${t("exit_code", { c: r.exit_code })}`;
+  $("robot-status-text").textContent = st;
+  $("robot-cmd").textContent = r.cmdline || "";
+}
+
+/* ---------- 轮询 ---------- */
+let failCount = 0;
+async function poll() {
+  try {
+    const res = await fetch("/api/state", { cache: "no-store" });
+    S = await res.json(); failCount = 0; render(S);
+  } catch {
+    if (++failCount === 3) toast(t("server_down"), true);
+    setDot("dot-server", "bad"); setDot("dot-cam", "bad");
+  } finally { setTimeout(poll, 500); }
+}
+$("stream").addEventListener("error", () => setTimeout(() => { $("stream").src = "/stream.mjpg?" + Date.now(); }, 2000));
+
+/* ---------- 演出程序:启动(实际可用) ---------- */
+$("seg-speed").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  speed = Number(b.dataset.v);
+  $("seg-speed").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+});
+const dlg = $("dlg-launch");
+const opts = () => ({
+  speed, waist: $("opt-waist").checked, speaker: $("opt-speaker").checked,
+  bgm: $("opt-bgm").checked, interface: $("opt-iface").value.trim(), dof: Number($("opt-dof").value),
+});
+$("btn-launch").addEventListener("click", () => {
+  dlg.querySelectorAll(".chk").forEach((c) => { c.checked = false; });
+  $("btn-launch-ok").disabled = true;
+  const o = opts(); const oo = (v) => t(v ? "on" : "off");
+  $("launch-summary").textContent = t("summary", { s: o.speed, w: oo(o.waist), sp: oo(o.speaker), b: oo(o.bgm) });
+  dlg.returnValue = "";   // Esc 关闭不会重置 returnValue,先清空,防止沿用上次的 "ok" 误启动
+  dlg.showModal();
+});
+dlg.addEventListener("change", () => {
+  $("btn-launch-ok").disabled = ![...dlg.querySelectorAll(".chk")].every((c) => c.checked);
+});
+dlg.addEventListener("close", async () => {
+  if (dlg.returnValue !== "ok") return;
+  try {
+    const res = await fetch("/api/robot/start", {
+      method: "POST", headers: { "Content-Type": "application/json", "X-Coach-Console": "1" },
+      body: JSON.stringify(opts()),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.status);
+    toast(t("launched", { p: data.pid }));
+  } catch (err) { toast(String(err.message || err), true); }
+});
+
+/* ---------- 参与者增删(实际可用,保存到 participants.json) ---------- */
+async function saveParticipants(list) {
+  const res = await fetch("/api/participants", {
+    method: "POST", headers: { "Content-Type": "application/json", "X-Coach-Console": "1" },
+    body: JSON.stringify({ participants: list }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || res.status);
+  if (S) { S.names = data.names; S.nicknames = data.nicknames; S.added_at = data.added_at; render(S); }
+  return data;
+}
+const currentList = () => (S ? S.names.map((n) => ({ letter: n, nickname: (S.nicknames || {})[n] || "" })) : []);
+function openAddForm(open) {
+  const form = $("add-form");
+  form.hidden = !open;
+  $("btn-add-person").setAttribute("aria-expanded", String(open));
+  if (!open || !S) return;
+  const used = new Set(S.names);
+  const free = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").filter((c) => !used.has(c));
+  $("add-letter").innerHTML = free.map((c) => `<option>${c}</option>`).join("");
+  $("add-nick").value = "";
+  $("add-nick").focus();
+}
+$("btn-add-person").addEventListener("click", () => openAddForm($("add-form").hidden));
+$("add-cancel").addEventListener("click", () => openAddForm(false));
+$("add-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const letter = $("add-letter").value; if (!letter) return;
+  try {
+    await saveParticipants([...currentList(), { letter, nickname: $("add-nick").value.trim() }]);
+    openAddForm(false);
+    toast(t("added", { n: letter }));
+  } catch (err) { toast(String(err.message || err), true); }
+});
+$("people").addEventListener("click", async (e) => {
+  const b = e.target.closest(".rm"); if (!b || b.disabled) return;
+  const n = b.dataset.n;
+  if (!confirm(t("remove_confirm", { n }))) return;
+  try {
+    await saveParticipants(currentList().filter((x) => x.letter !== n));
+    toast(t("removed", { n }));
+  } catch (err) { toast(String(err.message || err), true); }
+});
+
+$("seg-affect").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  affectFilter = b.dataset.f; if (S) render(S);
+});
+
+/* ---------- 仅界面的功能 ---------- */
+$("btn-estop").addEventListener("click", () => $("dlg-stop").showModal());
+$("btn-import").addEventListener("click", () => $("file-music").click());
+$("file-music").addEventListener("change", (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  $("track-name").textContent = f.name;
+  toast(t("import_toast", { f: f.name }));
+  e.target.value = "";
+});
+$("vol").addEventListener("change", () => toast(t("ui_toast")));
+// 报告:新标签页打开 dashboard;PDF=打开后自动弹出打印,CSV/JSON=打开后自动下载
+const openReport = (fmt) => window.open(`/report?lang=${lang}${fmt ? `&fmt=${fmt}` : ""}`, "_blank");
+$("btn-report").addEventListener("click", () => openReport(""));
+document.querySelectorAll(".report-dl").forEach((b) => b.addEventListener("click", () => openReport(b.dataset.fmt)));
+
+/* ---------- 画面右上角时间戳(本机时间,每秒刷新) ---------- */
+const WEEKDAY = { ja: "日月火水木金土", zh: "日一二三四五六", en: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] };
+function tickClock() {
+  const d = new Date();
+  const wd = WEEKDAY[lang][d.getDay()];
+  const ts = d.getTime() / 1000;
+  const el = $("clock");
+  el.dateTime = d.toISOString();
+  el.innerHTML = `${esc(fmtFull(ts))}<span class="ms">(${esc(wd)})</span>`;
+}
+tickClock();
+setInterval(tickClock, 1000);
+
+applyLang();
+poll();
+</script>
+</body>
+</html>

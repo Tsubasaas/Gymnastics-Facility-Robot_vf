@@ -43,5 +43,17 @@ try:
 except Exception as _e:
     print(f"⚠ 语音教练未启用: {_e}")
 
+# 演出 BGM：RUN 确认、动作开始时从电脑扬声器播放，结束/中断时淡出（见 bgm.py）。
+# 缺 bgm.mp3 时只提示不报错；--no-bgm 或 BGM=0 可关闭。
+try:
+    import bgm as _bgm
+    if _bgm.available():
+        ai_robot.BGM = _bgm
+        print(f"♪ BGM 已就绪: {_bgm.BGM_PATH}")
+    elif _bgm.ENABLED:
+        print(f"⚠ 未找到 BGM 文件 {_bgm.BGM_PATH}，本次不播放音乐")
+except Exception as _e:
+    print(f"⚠ BGM 未启用: {_e}")
+
 if __name__ == "__main__":
     ai_robot.main()

@@ -3,3 +3,5 @@ cyclonedds==0.10.2
 unitree_sdk2py @ git+https://github.com/unitreerobotics/unitree_sdk2_python.git@37116c521f1588482e238d8450e471ba78ab9863
 openai>=2.0,<3
 dashscope>=1.20,<2
+# vision_coach 调试窗口画彩色 emoji(缺失时自动退回纯文字)
+pillow

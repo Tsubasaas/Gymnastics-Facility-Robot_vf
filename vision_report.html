@@ -1,0 +1,742 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>セッションレポート</title>
+<style>
+:root {
+  --text: #0b2545;
+  --text-2: #3d5673;
+  --muted: #6b7f95;
+  --surface: #ffffff;
+  --line: #d3e6f8;
+  --grid: #e6edf4;
+  --axis: #c3cfdb;
+  --grad: linear-gradient(135deg, #22d3ee 0%, #3b82f6 55%, #6366f1 100%);
+  /* 积极/消极 = 发散色对(蓝↔红,已用 validate_palette 校验) */
+  --pos: #2a78d6;
+  --neg: #e34948;
+  /* 状态色(固定,始终配图标+文字) */
+  --good: #0ca30c;
+  --warning: #fab219;
+  --critical: #d03b3b;
+  --good-bg: #e7f7e7;
+  --warning-bg: #fff5dc;
+  --critical-bg: #fde8e8;
+  --none-bg: #f1f4f7;
+  --dot: #3d5673;
+  --shadow: 0 10px 30px rgba(29, 108, 210, .10), 0 2px 6px rgba(29, 108, 210, .06);
+  --font: "Noto Sans JP", "Yu Gothic UI", "Meiryo", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  color: var(--text); font: 14px/1.55 var(--font); -webkit-font-smoothing: antialiased;
+  background-color: #e2f1ff;
+  background-image:
+    radial-gradient(1100px 640px at -5% -10%, #8fd8ff 0%, rgba(143, 216, 255, 0) 62%),
+    radial-gradient(950px 660px at 105% -5%, #b9b4ff 0%, rgba(185, 180, 255, 0) 60%),
+    linear-gradient(160deg, #e6f6ff 0%, #f2f8ff 50%, #e4eeff 100%);
+  background-attachment: fixed;
+}
+button { font: inherit; cursor: pointer; }
+:focus-visible { outline: 3px solid rgba(59, 130, 246, .45); outline-offset: 2px; }
+
+.wrap { max-width: 1280px; margin: 0 auto; padding: 20px 20px 40px; }
+.top {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; margin-bottom: 18px;
+}
+.brand-mark {
+  width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; flex: none;
+  background: var(--grad); color: #fff; font-size: 20px; box-shadow: 0 6px 16px rgba(59, 130, 246, .35);
+}
+.ttl { min-width: 0; flex: 1; }
+.ttl h1 { margin: 0; font-size: 22px; line-height: 1.25; }
+.ttl .meta { color: var(--muted); font-size: 13px; }
+.sample {
+  display: inline-block; margin-left: 8px; vertical-align: 3px; font-size: 11px; font-weight: 700;
+  padding: 2px 8px; border-radius: 999px; background: #fff4e0; color: #9a5b06; border: 1px solid #fcd9a5;
+}
+.actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.btn {
+  display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 10px;
+  border: 1px solid #b5d4f1; background: #fff; color: #1e4a7a; font-weight: 700;
+}
+.btn:hover { background: #f3f9ff; border-color: #7cb7ff; }
+.btn.primary { background: var(--grad); color: #fff; border: 0; box-shadow: 0 6px 16px rgba(59, 130, 246, .3); }
+.lang { display: flex; border: 1px solid #b5d4f1; border-radius: 10px; overflow: hidden; background: #fff; }
+.lang button { background: none; border: 0; padding: 7px 11px; color: var(--muted); font-size: 12px; }
+.lang button[aria-pressed="true"] { background: var(--grad); color: #fff; font-weight: 700; }
+
+/* 卡片栅格 */
+.grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; }
+.card {
+  background: rgba(255, 255, 255, .9); border: 1px solid rgba(255, 255, 255, .95); border-radius: 16px;
+  box-shadow: var(--shadow); padding: 16px 18px; min-width: 0; break-inside: avoid;
+}
+.s3 { grid-column: span 3; } .s4 { grid-column: span 4; } .s5 { grid-column: span 5; }
+.s6 { grid-column: span 6; } .s7 { grid-column: span 7; } .s8 { grid-column: span 8; } .s12 { grid-column: span 12; }
+.card h2 { margin: 0; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+.card h2::before { content: ""; width: 4px; height: 16px; border-radius: 2px; background: var(--grad); flex: none; }
+.card .sub { color: var(--muted); font-size: 12px; margin: 2px 0 10px 12px; }
+
+/* 关键指标 */
+.kpi .lbl { color: var(--muted); font-size: 12px; font-weight: 700; }
+.kpi .val { font-size: 34px; font-weight: 800; line-height: 1.15; margin-top: 4px; }
+.kpi .val small { font-size: 15px; font-weight: 700; color: var(--text-2); margin-left: 2px; }
+.kpi .note { color: var(--text-2); font-size: 12px; margin-top: 4px; }
+.kpi .note .icon { font-weight: 800; }
+
+/* 图例 */
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: var(--text-2); margin: 0 0 6px 12px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+
+/* 图表 */
+.chart { position: relative; width: 100%; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart text { font-family: var(--font); }
+.tick { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.axlbl { fill: var(--text-2); font-size: 12px; }
+.vlabel { fill: var(--text); font-size: 12px; font-weight: 700; }
+.hit { fill: transparent; cursor: default; outline: none; }
+.hit:focus-visible { stroke: #3b82f6; stroke-width: 2; }
+.tip {
+  position: fixed; z-index: 30; pointer-events: none; padding: 8px 10px; border-radius: 10px;
+  background: #0b2545; color: #fff; font-size: 12px; line-height: 1.45; box-shadow: 0 10px 24px rgba(11, 37, 69, .3);
+  opacity: 0; transition: opacity .12s; max-width: 260px;
+}
+.tip.show { opacity: 1; }
+.tip b { font-weight: 800; }
+.tip .k { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; }
+
+/* 评判矩阵 */
+.matrix { width: 100%; border-collapse: separate; border-spacing: 4px; }
+.matrix th { font-size: 12px; color: var(--muted); font-weight: 700; text-align: center; padding: 2px; }
+.matrix th.row { text-align: left; color: var(--text); white-space: nowrap; }
+.matrix td { border-radius: 10px; padding: 8px 6px; text-align: center; font-size: 12px; font-weight: 700; line-height: 1.3; }
+.matrix td .ic { display: block; font-size: 16px; line-height: 1; margin-bottom: 3px; }
+.c-ok { background: var(--good-bg); color: #075f07; }
+.c-ok .ic { color: var(--good); }
+.c-issue { background: var(--warning-bg); color: #7a4a00; }
+.c-issue .ic { color: #c98500; }
+.c-still { background: var(--critical-bg); color: #8f1f1f; }
+.c-still .ic { color: var(--critical); }
+.c-none { background: var(--none-bg); color: var(--muted); font-weight: 400; }
+.mx-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--text-2); margin-top: 8px; }
+
+/* 表格 */
+.tbl-wrap { overflow-x: auto; }
+table.data { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.data th {
+  text-align: left; font-size: 12px; color: var(--muted); font-weight: 700; padding: 8px 10px;
+  border-bottom: 1px solid var(--line); white-space: nowrap;
+}
+table.data td { padding: 9px 10px; border-bottom: 1px solid #edf3f9; vertical-align: middle; }
+table.data td.num, table.data th.num { text-align: right; font-variant-numeric: tabular-nums; }
+table.data tr:last-child td { border-bottom: 0; }
+.who {
+  display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%;
+  background: var(--grad); color: #fff; font-size: 12px; font-weight: 800; margin-right: 8px;
+}
+.flag {
+  display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700;
+  padding: 2px 8px; border-radius: 999px; background: var(--critical-bg); color: #8f1f1f;
+}
+.okflag { background: var(--good-bg); color: #075f07; }
+.kind { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.kind.still { background: var(--critical-bg); color: #8f1f1f; }
+.kind.issue { background: var(--warning-bg); color: #7a4a00; }
+.kind.praise { background: var(--good-bg); color: #075f07; }
+
+details.dt { margin-top: 8px; }
+details.dt summary { cursor: pointer; color: #2563eb; font-size: 12px; font-weight: 700; margin-left: 12px; }
+details.dt table { margin-top: 6px; }
+
+.callout {
+  display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-radius: 12px;
+  background: linear-gradient(135deg, #fff1f2 0%, #ffe9ec 100%); border: 1px solid #fecdd3; margin-top: 10px;
+}
+.callout .ic { font-size: 20px; line-height: 1.2; }
+.callout b { color: #9f1239; }
+.notes { color: var(--text-2); font-size: 12px; margin: 0; padding-left: 18px; }
+.notes li + li { margin-top: 4px; }
+.footer { text-align: center; color: var(--muted); font-size: 12px; margin-top: 18px; }
+
+@media (max-width: 980px) {
+  .s3 { grid-column: span 6; } .s4, .s5, .s6, .s7, .s8 { grid-column: span 12; }
+}
+@media (max-width: 560px) {
+  .wrap { padding: 14px 16px 32px; }
+  .s3 { grid-column: span 12; }
+  .ttl h1 { font-size: 18px; }
+}
+@media print {
+  body { background: #fff; }
+  .actions, .lang, details.dt summary { display: none !important; }
+  details.dt { display: none; }
+  .card { box-shadow: none; border: 1px solid #dfe7ef; }
+  .wrap { padding: 0; max-width: none; }
+  .tip { display: none; }
+  @page { size: A4; margin: 12mm; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <span class="brand-mark" aria-hidden="true">◎</span>
+    <div class="ttl">
+      <h1><span data-i18n="title">ラジオ体操 セッションレポート</span><span class="sample" data-i18n="sample">サンプルデータ</span></h1>
+      <div class="meta" id="meta"></div>
+    </div>
+    <div class="lang" role="group" aria-label="language">
+      <button data-lang="ja">日本語</button><button data-lang="zh">中文</button><button data-lang="en">EN</button>
+    </div>
+    <div class="actions">
+      <button class="btn primary" id="btn-pdf">⎙ <span data-i18n="pdf">PDF / 印刷</span></button>
+      <button class="btn" id="btn-csv">⤓ CSV</button>
+      <button class="btn" id="btn-json">⤓ JSON</button>
+    </div>
+  </header>
+
+  <main class="grid">
+    <section class="card kpi s3" id="kpi-people"></section>
+    <section class="card kpi s3" id="kpi-pos"></section>
+    <section class="card kpi s3" id="kpi-speak"></section>
+    <section class="card kpi s3" id="kpi-still"></section>
+
+    <section class="card s7">
+      <h2 data-i18n="c_section">節ごとの表情</h2>
+      <div class="sub" data-i18n="c_section_sub">表情サンプル数(上:ポジティブ / 下:ネガティブ)</div>
+      <div class="legend" id="lg-section"></div>
+      <div class="chart" id="ch-section"></div>
+      <details class="dt"><summary data-i18n="show_table">データ表を表示</summary><div class="tbl-wrap" id="tb-section"></div></details>
+    </section>
+
+    <section class="card s5">
+      <h2 data-i18n="c_person">参加者別 ポジティブ率</h2>
+      <div class="sub" data-i18n="c_person_sub">全表情サンプルに占めるポジティブの割合</div>
+      <div class="chart" id="ch-person"></div>
+      <details class="dt"><summary data-i18n="show_table">データ表を表示</summary><div class="tbl-wrap" id="tb-person"></div></details>
+    </section>
+
+    <section class="card s6">
+      <h2 data-i18n="c_matrix">動作判定(③④⑤)</h2>
+      <div class="sub" data-i18n="c_matrix_sub">各節の第8拍で撮影した3枚から判定</div>
+      <div class="tbl-wrap"><table class="matrix" id="matrix"></table></div>
+      <div class="mx-legend" id="mx-legend"></div>
+    </section>
+
+    <section class="card s6">
+      <h2 data-i18n="c_affect">表情の内訳(PGC-ARS 6分類)</h2>
+      <div class="sub" data-i18n="c_affect_sub">全参加者・全節の合計サンプル数</div>
+      <div class="legend" id="lg-affect"></div>
+      <div class="chart" id="ch-affect"></div>
+      <details class="dt"><summary data-i18n="show_table">データ表を表示</summary><div class="tbl-wrap" id="tb-affect"></div></details>
+    </section>
+
+    <section class="card s12">
+      <h2 data-i18n="c_motion">運動量スコア</h2>
+      <div class="sub" data-i18n="c_motion_sub">関節フレーム間の画素変化(人物枠内)。判定ラインを下回ると「動きなし」</div>
+      <div class="chart" id="ch-motion"></div>
+      <details class="dt"><summary data-i18n="show_table">データ表を表示</summary><div class="tbl-wrap" id="tb-motion"></div></details>
+      <div class="callout" id="callout"></div>
+    </section>
+
+    <section class="card s7">
+      <h2 data-i18n="t_people">参加者サマリー</h2>
+      <div class="sub" data-i18n="t_people_sub">最後まで参加した方・表情・判定・フォローの要否</div>
+      <div class="tbl-wrap" id="tb-people"></div>
+    </section>
+
+    <section class="card s5">
+      <h2 data-i18n="t_speak">声かけ履歴</h2>
+      <div class="sub" data-i18n="t_speak_sub">ロボットが実際に読み上げた内容</div>
+      <div class="tbl-wrap" id="tb-speak"></div>
+    </section>
+
+    <section class="card s12">
+      <h2 data-i18n="notes">注記</h2>
+      <ul class="notes" id="notes"></ul>
+    </section>
+  </main>
+  <div class="footer" id="footer"></div>
+</div>
+<div class="tip" id="tip" role="tooltip"></div>
+
+<script>
+/* ================= 虚拟示例数据(之后可替换为 records/taiso_*.json) ================= */
+const REPORT = {
+  sample: true,
+  session_id: "taiso_20261110_140005",
+  date: "2026-11-10", start: "14:00:05", end: "14:01:32", duration_s: 87,
+  program: "p7", speed_deg_s: 45, robot: "Unitree G1 (29 DOF)",
+  models: { judge: "qwen3-vl-plus", preview: "qwen3.7-flash" },
+  still_threshold: 4.0,
+  participants: [
+    { letter: "A", nickname: "田中さん", completed: true },
+    { letter: "B", nickname: "佐藤さん", completed: true },
+    { letter: "C", nickname: "鈴木さん", completed: true },
+    { letter: "D", nickname: "高橋さん", completed: true },
+  ],
+  sections: [
+    { key: "1_senobi", no: "①", judged: false, pos: 12, neg: 2 },
+    { key: "2_ude", no: "②", judged: false, pos: 13, neg: 2 },
+    { key: "3_udemawashi", no: "③", judged: true, pos: 11, neg: 4 },
+    { key: "4_mune", no: "④", judged: true, pos: 13, neg: 3 },
+    { key: "5_yokomage", no: "⑤", judged: true, pos: 13, neg: 2 },
+  ],
+  // PGC-ARS 6 类:每人计数
+  affects: {
+    A: { "愉悦": 9, "兴趣": 5, "满足": 6, "愤怒": 0, "焦虑": 0, "悲伤": 0 },
+    B: { "愉悦": 4, "兴趣": 6, "满足": 7, "愤怒": 0, "焦虑": 2, "悲伤": 1 },
+    C: { "愉悦": 3, "兴趣": 7, "满足": 5, "愤怒": 0, "焦虑": 3, "悲伤": 0 },
+    D: { "愉悦": 1, "兴趣": 3, "满足": 6, "愤怒": 0, "焦虑": 3, "悲伤": 4 },
+  },
+  // 评判:ok / issue / still;motion = 本地运动量分数
+  judgments: {
+    A: { "3_udemawashi": { r: "ok", m: 18.2 }, "4_mune": { r: "ok", m: 15.7 }, "5_yokomage": { r: "ok", m: 16.9 } },
+    B: { "3_udemawashi": { r: "issue", issue: "circle_small", m: 9.1 }, "4_mune": { r: "ok", m: 12.4 }, "5_yokomage": { r: "ok", m: 11.8 } },
+    C: { "3_udemawashi": { r: "ok", m: 14.3 }, "4_mune": { r: "issue", issue: "arms_low", m: 8.2 }, "5_yokomage": { r: "ok", m: 10.5 } },
+    D: { "3_udemawashi": { r: "still", m: 2.1 }, "4_mune": { r: "ok", m: 6.3 }, "5_yokomage": { r: "issue", issue: "bend_small", m: 5.9 } },
+  },
+  spoken: [
+    { t: "14:00:41", section: "3_udemawashi", name: "D", kind: "still", text: "Dさん、一緒に体を動かしましょう!" },
+    { t: "14:01:02", section: "4_mune", name: "C", kind: "issue", text: "Cさん、腕をもっと高く上げましょう" },
+    { t: "14:01:23", section: "5_yokomage", name: "D", kind: "issue", text: "Dさん、体をしっかり横に曲げましょう" },
+    { t: "14:01:24", section: "5_yokomage", name: "A", kind: "praise", text: "Aさん、とても上手です!" },
+  ],
+  follow_up: ["D"],
+};
+
+/* ================= 多语言 ================= */
+const I18N = {
+  ja: {
+    title: "ラジオ体操 セッションレポート", sample: "サンプルデータ", pdf: "PDF / 印刷",
+    meta: "{d} {s}–{e} · 演出 {dur} · {robot} · {spd}°/s",
+    k_people: "参加者", k_people_note: "全員が最後まで参加", k_pos: "ポジティブ表情率", k_pos_note: "{p} / {n} サンプル",
+    k_speak: "声かけ", k_speak_note: "指導 {i} · 誘い {s} · 称賛 {p}", k_still: "動きなしアラート", k_still_note: "{who}",
+    unit_people: "名", unit_times: "回",
+    c_section: "節ごとの表情", c_section_sub: "表情サンプル数(上:ポジティブ / 下:ネガティブ)",
+    c_person: "参加者別 ポジティブ率", c_person_sub: "全表情サンプルに占めるポジティブの割合",
+    c_matrix: "動作判定(③④⑤)", c_matrix_sub: "各節の第8拍で撮影した3枚から判定",
+    c_affect: "表情の内訳(PGC-ARS 6分類)", c_affect_sub: "全参加者・全節の合計サンプル数",
+    c_motion: "運動量スコア", c_motion_sub: "撮影フレーム間の画素変化(人物枠内)。判定ラインを下回ると「動きなし」",
+    t_people: "参加者サマリー", t_people_sub: "最後まで参加した方・表情・判定・フォローの要否",
+    t_speak: "声かけ履歴", t_speak_sub: "ロボットが実際に読み上げた内容", notes: "注記",
+    show_table: "データ表を表示", pos: "ポジティブ", neg: "ネガティブ", avg: "全体平均 {p}%",
+    section: "節", count: "サンプル数", ratio: "ポジティブ率", participant: "参加者",
+    ok: "OK", issue: "要改善", still: "動きなし", none: "判定なし",
+    threshold: "判定ライン {v}", score: "スコア",
+    col_who: "参加者", col_samples: "表情サンプル", col_pos: "ポジティブ率", col_main: "主な表情",
+    col_judge: "判定 OK", col_follow: "フォロー", follow: "要声かけ", fine: "良好",
+    col_time: "時刻", col_sec: "節", col_text: "内容", col_kind: "種類",
+    kind_still: "誘い", kind_issue: "指導", kind_praise: "称賛",
+    callout: "<b>{who}</b> は今日は動きが小さめでした(③で動きなし、⑤で曲げが小さい)。可能でしたら、あとでお声がけをお願いいたします。",
+    notes_list: [
+      "このレポートは<b>サンプルデータ</b>です。実際のセッション記録(records/taiso_*.json)とはまだ接続していません。",
+      "表情は PGC-ARS(Philadelphia Geriatric Center Affect Rating Scale, Lawton et al., 1996)の6分類を参考に、視覚言語モデルが1フレームごとに推定したものです。原尺度の正式な評価(観察者による約10分間の持続時間評定)ではありません。",
+      "「動きなし」は人物枠内の画素変化(運動量スコア)が判定ライン未満のときに判定します。カメラの揺れや照明で値が変わるため、現場で調整してください。",
+      "判定・表情は見守りの補助情報です。個人の評価や診断には使用しないでください。",
+    ],
+    footer: "生成: 体操コーチ コンソール · セッション {id}",
+    sec_names: { "1_senobi": "背伸び", "2_ude": "腕の運動", "3_udemawashi": "腕を回す", "4_mune": "胸をそらす", "5_yokomage": "体を横に曲げる" },
+    issues: { circle_small: "円が小さい", arms_low: "腕が低い", bend_small: "曲げが小さい", chest_closed: "胸が閉じている", lean_forward: "前かがみ" },
+    affects: { "愉悦": "喜び", "兴趣": "興味", "满足": "満足", "愤怒": "怒り", "焦虑": "不安", "悲伤": "悲しみ" },
+  },
+  zh: {
+    title: "广播体操 场次报告", sample: "示例数据", pdf: "PDF / 打印",
+    meta: "{d} {s}–{e} · 演出 {dur} · {robot} · {spd}°/s",
+    k_people: "参与者", k_people_note: "全员坚持到最后", k_pos: "积极表情率", k_pos_note: "{p} / {n} 次采样",
+    k_speak: "语音点评", k_speak_note: "纠正 {i} · 邀请 {s} · 表扬 {p}", k_still: "没在动提醒", k_still_note: "{who}",
+    unit_people: "名", unit_times: "次",
+    c_section: "各节表情", c_section_sub: "表情采样次数(上:积极 / 下:消极)",
+    c_person: "每人积极率", c_person_sub: "积极表情占全部表情采样的比例",
+    c_matrix: "动作评判(③④⑤)", c_matrix_sub: "每节第 8 拍抓的 3 帧画面评判",
+    c_affect: "表情构成(PGC-ARS 六类)", c_affect_sub: "全体参与者、全部各节的采样合计",
+    c_motion: "运动量分数", c_motion_sub: "抓帧之间人物框内的像素变化。低于判定线即「没在动」",
+    t_people: "参与者汇总", t_people_sub: "坚持到最后的人、表情、评判、是否需要跟进",
+    t_speak: "语音点评记录", t_speak_sub: "机器人实际念出的内容", notes: "说明",
+    show_table: "查看数据表", pos: "积极", neg: "消极", avg: "全场平均 {p}%",
+    section: "节", count: "采样次数", ratio: "积极率", participant: "参与者",
+    ok: "OK", issue: "要改善", still: "没在动", none: "不评判",
+    threshold: "判定线 {v}", score: "分数",
+    col_who: "参与者", col_samples: "表情采样", col_pos: "积极率", col_main: "主要表情",
+    col_judge: "评判 OK", col_follow: "跟进", follow: "需要关心", fine: "良好",
+    col_time: "时间", col_sec: "节", col_text: "内容", col_kind: "类型",
+    kind_still: "邀请", kind_issue: "纠正", kind_praise: "表扬",
+    callout: "<b>{who}</b> 今天动作偏小(③ 没在动,⑤ 侧弯太小)。方便的话,之后请去关心一下。",
+    notes_list: [
+      "本报告为<b>示例数据</b>,尚未接入真实的场次记录(records/taiso_*.json)。",
+      "表情参考 PGC-ARS(Philadelphia Geriatric Center Affect Rating Scale, Lawton et al., 1996)的六个类别,由视觉大模型逐帧估计,并非原量表的正式测评(观察者约 10 分钟的持续时间评分)。",
+      "「没在动」= 人物框内的像素变化(运动量分数)低于判定线。相机抖动、光线会影响数值,请在现场校准。",
+      "评判与表情仅作看护参考,请勿用于个人评价或诊断。",
+    ],
+    footer: "生成:体操教练 控制台 · 场次 {id}",
+    sec_names: { "1_senobi": "伸展", "2_ude": "摆臂", "3_udemawashi": "抡臂", "4_mune": "扩胸", "5_yokomage": "体侧屈" },
+    issues: { circle_small: "圈太小", arms_low: "手臂太低", bend_small: "侧弯太小", chest_closed: "胸没打开", lean_forward: "往前弯腰" },
+    affects: { "愉悦": "愉悦", "兴趣": "兴趣", "满足": "满足", "愤怒": "愤怒", "焦虑": "焦虑", "悲伤": "悲伤" },
+  },
+  en: {
+    title: "Radio Taiso Session Report", sample: "Sample data", pdf: "PDF / Print",
+    meta: "{d} {s}–{e} · Show {dur} · {robot} · {spd}°/s",
+    k_people: "Participants", k_people_note: "Everyone finished", k_pos: "Positive expressions", k_pos_note: "{p} / {n} samples",
+    k_speak: "Spoken feedback", k_speak_note: "Coaching {i} · Invites {s} · Praise {p}", k_still: "Not-moving alerts", k_still_note: "{who}",
+    unit_people: "", unit_times: "",
+    c_section: "Expressions by section", c_section_sub: "Expression samples (up: positive / down: negative)",
+    c_person: "Positive rate by participant", c_person_sub: "Share of positive among all expression samples",
+    c_matrix: "Movement judgments (③④⑤)", c_matrix_sub: "Judged from 3 frames captured by beat 8 of each section",
+    c_affect: "Expression breakdown (PGC-ARS, 6 classes)", c_affect_sub: "Total samples, all participants and sections",
+    c_motion: "Motion score", c_motion_sub: "Pixel change between captured frames inside each person's box. Below the line = “not moving”",
+    t_people: "Participant summary", t_people_sub: "Who finished, expressions, judgments, follow-up needed",
+    t_speak: "Spoken feedback log", t_speak_sub: "What the robot actually said", notes: "Notes",
+    show_table: "Show data table", pos: "Positive", neg: "Negative", avg: "Average {p}%",
+    section: "Section", count: "Samples", ratio: "Positive rate", participant: "Participant",
+    ok: "OK", issue: "Needs work", still: "Not moving", none: "Not judged",
+    threshold: "Threshold {v}", score: "Score",
+    col_who: "Participant", col_samples: "Samples", col_pos: "Positive", col_main: "Main expression",
+    col_judge: "Judged OK", col_follow: "Follow-up", follow: "Check in", fine: "Good",
+    col_time: "Time", col_sec: "Sec.", col_text: "Message", col_kind: "Type",
+    kind_still: "Invite", kind_issue: "Coaching", kind_praise: "Praise",
+    callout: "<b>{who}</b> moved less than others today (not moving in ③, small bend in ⑤). If possible, please check in with them afterwards.",
+    notes_list: [
+      "This report uses <b>sample data</b>. It is not yet connected to real session records (records/taiso_*.json).",
+      "Expressions follow the six classes of the PGC-ARS (Philadelphia Geriatric Center Affect Rating Scale, Lawton et al., 1996), estimated per frame by a vision-language model. This is not a formal administration of the scale (trained observers rating duration over ~10 minutes).",
+      "“Not moving” means the pixel change inside the person's box (motion score) fell below the threshold. Camera shake and lighting affect the value — calibrate on site.",
+      "Judgments and expressions are support information for caregivers. Do not use them to evaluate or diagnose individuals.",
+    ],
+    footer: "Generated by Taiso Coach Console · session {id}",
+    sec_names: { "1_senobi": "Stretch", "2_ude": "Arm swing", "3_udemawashi": "Arm circles", "4_mune": "Chest opener", "5_yokomage": "Side bend" },
+    issues: { circle_small: "circles too small", arms_low: "arms too low", bend_small: "bend too small", chest_closed: "chest not open", lean_forward: "leaning forward" },
+    affects: { "愉悦": "Pleasure", "兴趣": "Interest", "满足": "Contentment", "愤怒": "Anger", "焦虑": "Anxiety", "悲伤": "Sadness" },
+  },
+};
+const LANGS = ["ja", "zh", "en"];
+const AFFECT_KEYS = ["愉悦", "兴趣", "满足", "愤怒", "焦虑", "悲伤"];
+const AFFECT_EMOJI = { "愉悦": "😄", "兴趣": "👀", "满足": "😌", "愤怒": "😠", "焦虑": "😟", "悲伤": "😢" };
+const POSITIVE = new Set(["愉悦", "兴趣", "满足"]);
+const JUDGED = REPORT.sections.filter((s) => s.judged).map((s) => s.key);
+
+const params = new URLSearchParams(location.search);
+let lang = (() => {
+  const q = params.get("lang"); if (LANGS.includes(q)) return q;
+  try { const v = localStorage.getItem("coach-lang"); return LANGS.includes(v) ? v : "ja"; } catch { return "ja"; }
+})();
+const L = () => I18N[lang];
+const t = (k, v = {}) => String(L()[k] ?? k).replace(/\{(\w+)\}/g, (_, x) => v[x] ?? "");
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const nick = (l) => (REPORT.participants.find((p) => p.letter === l) || {}).nickname || "";
+const whoLabel = (l) => nick(l) ? `${l} · ${nick(l)}` : l;
+const secName = (k) => L().sec_names[k] || k;
+const secNo = (k) => (REPORT.sections.find((s) => s.key === k) || {}).no || "";
+const SVGNS = "http://www.w3.org/2000/svg";
+
+/* ================= 派生统计 ================= */
+function stats() {
+  const per = REPORT.participants.map((p) => {
+    const a = REPORT.affects[p.letter] || {};
+    const pos = AFFECT_KEYS.filter((k) => POSITIVE.has(k)).reduce((s, k) => s + (a[k] || 0), 0);
+    const neg = AFFECT_KEYS.filter((k) => !POSITIVE.has(k)).reduce((s, k) => s + (a[k] || 0), 0);
+    const main = AFFECT_KEYS.slice().sort((x, y) => (a[y] || 0) - (a[x] || 0))[0];
+    const j = REPORT.judgments[p.letter] || {};
+    const okN = JUDGED.filter((k) => j[k] && j[k].r === "ok").length;
+    const stillN = JUDGED.filter((k) => j[k] && j[k].r === "still").length;
+    return { ...p, pos, neg, n: pos + neg, rate: pos + neg ? pos / (pos + neg) : 0, main, okN, stillN,
+      follow: REPORT.follow_up.includes(p.letter) };
+  });
+  const totPos = per.reduce((s, x) => s + x.pos, 0), totN = per.reduce((s, x) => s + x.n, 0);
+  const affectTot = Object.fromEntries(AFFECT_KEYS.map((k) => [k, per.reduce((s, x) => s + ((REPORT.affects[x.letter] || {})[k] || 0), 0)]));
+  const stills = [];
+  for (const p of REPORT.participants) for (const k of JUDGED) {
+    const j = (REPORT.judgments[p.letter] || {})[k]; if (j && j.r === "still") stills.push({ who: p.letter, sec: k });
+  }
+  return { per, totPos, totN, rate: totN ? totPos / totN : 0, affectTot, stills };
+}
+
+/* ================= 工具:SVG / 提示框 / 表格 ================= */
+function el(tag, attrs = {}, parent) {
+  const e = document.createElementNS(SVGNS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+// 只把远离基线那一端做成 4px 圆角(dir: up/down/right)
+function barPath(x, y, w, h, dir) {
+  const r = Math.max(0, Math.min(4, w / 2, h / 2));
+  if (h <= 0 || w <= 0) return "";
+  if (dir === "up") return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`;
+  if (dir === "down") return `M${x},${y}V${y + h - r}Q${x},${y + h} ${x + r},${y + h}H${x + w - r}Q${x + w},${y + h} ${x + w},${y + h - r}V${y}Z`;
+  return `M${x},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h - r}Q${x + w},${y + h} ${x + w - r},${y + h}H${x}Z`;
+}
+const tip = $("tip");
+function bindTip(target, html) {
+  const show = (e) => {
+    tip.innerHTML = html; tip.classList.add("show");
+    const r = target.getBoundingClientRect();
+    const x = e && e.clientX != null ? e.clientX : r.left + r.width / 2;
+    const y = e && e.clientY != null ? e.clientY : r.top;
+    const w = tip.offsetWidth, h = tip.offsetHeight;
+    tip.style.left = Math.min(window.innerWidth - w - 8, Math.max(8, x + 12)) + "px";
+    tip.style.top = Math.max(8, y - h - 12) + "px";
+  };
+  target.addEventListener("mousemove", show);
+  target.addEventListener("focus", () => show(null));
+  target.addEventListener("mouseleave", () => tip.classList.remove("show"));
+  target.addEventListener("blur", () => tip.classList.remove("show"));
+  target.setAttribute("tabindex", "0");
+}
+function table(headers, rows, numCols = []) {
+  return `<table class="data"><thead><tr>${headers.map((h, i) =>
+    `<th class="${numCols.includes(i) ? "num" : ""}">${h}</th>`).join("")}</tr></thead><tbody>${rows.map((r) =>
+    `<tr>${r.map((c, i) => `<td class="${numCols.includes(i) ? "num" : ""}">${c}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+}
+const pct = (x) => Math.round(x * 100);
+const legend = (items) => items.map(([c, txt]) => `<span><i style="background:${c}"></i>${esc(txt)}</span>`).join("");
+const niceMax = (v, step) => Math.max(step, Math.ceil(v / step) * step);
+
+/* ================= 图 1:各节表情(发散柱) ================= */
+function drawSection(S) {
+  const box = $("ch-section"); box.innerHTML = "";
+  const W = Math.max(320, box.clientWidth), H = 240, m = { t: 14, r: 12, b: 40, l: 36 };
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": t("c_section") }, box);
+  // 上下两半用同一比例尺,但各按自己的最大值分配高度(消极很少时不浪费下半区)
+  const posMax = niceMax(Math.max(...REPORT.sections.map((s) => s.pos)), 4);
+  const negMax = niceMax(Math.max(...REPORT.sections.map((s) => s.neg)), 4);
+  const iw = W - m.l - m.r, ih = H - m.t - m.b - 16;
+  const unit = ih / (posMax + negMax), y0 = m.t + posMax * unit;
+  const ys = (v) => v * unit;
+  const ticks = [posMax, posMax / 2, 0, -negMax];
+  for (const v of ticks) {
+    const y = y0 - ys(v);
+    el("line", { x1: m.l, x2: W - m.r, y1: y, y2: y, stroke: v === 0 ? css("--axis") : css("--grid"), "stroke-width": 1 }, svg);
+    el("text", { x: m.l - 6, y: y + 4, "text-anchor": "end", class: "tick" }, svg).textContent = Math.abs(v);
+  }
+  const n = REPORT.sections.length, band = iw / n, bw = Math.min(34, band * 0.46);
+  REPORT.sections.forEach((s, i) => {
+    const cx = m.l + band * i + band / 2, x = cx - bw / 2;
+    const g = el("g", {}, svg);
+    const hp = ys(s.pos), hn = ys(s.neg);
+    el("path", { d: barPath(x, y0 - hp - 1, bw, hp, "up"), fill: css("--pos"), class: "mark" }, g);
+    el("path", { d: barPath(x, y0 + 1, bw, hn, "down"), fill: css("--neg"), class: "mark" }, g);
+    el("text", { x: cx, y: y0 - hp - 6, "text-anchor": "middle", class: "vlabel" }, g).textContent = s.pos;
+    el("text", { x: cx, y: y0 + hn + 15, "text-anchor": "middle", class: "vlabel" }, g).textContent = s.neg;
+    el("text", { x: cx, y: H - 20, "text-anchor": "middle", class: "axlbl" }, g).textContent = s.no;
+    el("text", { x: cx, y: H - 5, "text-anchor": "middle", class: "tick" }, g).textContent = secName(s.key);
+    const hit = el("rect", { x: m.l + band * i, y: m.t, width: band, height: ih, class: "hit" }, g);
+    const r = s.pos / (s.pos + s.neg);
+    bindTip(hit, `<b>${esc(s.no)} ${esc(secName(s.key))}</b><br><span class="k" style="background:${css("--pos")}"></span>${esc(t("pos"))} ${s.pos}<br><span class="k" style="background:${css("--neg")}"></span>${esc(t("neg"))} ${s.neg}<br>${esc(t("ratio"))} ${pct(r)}%`);
+  });
+  $("lg-section").innerHTML = legend([[css("--pos"), t("pos")], [css("--neg"), t("neg")]]);
+  $("tb-section").innerHTML = table([t("section"), t("pos"), t("neg"), t("ratio")],
+    REPORT.sections.map((s) => [`${s.no} ${esc(secName(s.key))}`, s.pos, s.neg, pct(s.pos / (s.pos + s.neg)) + "%"]), [1, 2, 3]);
+}
+
+/* ================= 图 2:每人积极率(横向柱 + 平均线) ================= */
+function drawPerson(S) {
+  const box = $("ch-person"); box.innerHTML = "";
+  const rows = S.per.slice().sort((a, b) => b.rate - a.rate);
+  const W = Math.max(300, box.clientWidth), rowH = 38, m = { t: 22, r: 48, b: 24, l: 96 };
+  const H = m.t + rows.length * rowH + m.b;
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": t("c_person") }, box);
+  const iw = W - m.l - m.r, xs = (v) => m.l + v * iw;
+  for (const v of [0, .25, .5, .75, 1]) {
+    el("line", { x1: xs(v), x2: xs(v), y1: m.t - 4, y2: H - m.b, stroke: v === 0 ? css("--axis") : css("--grid") }, svg);
+    el("text", { x: xs(v), y: H - 6, "text-anchor": "middle", class: "tick" }, svg).textContent = pct(v) + "%";
+  }
+  rows.forEach((p, i) => {
+    const y = m.t + i * rowH + 7, bh = rowH - 16;
+    el("text", { x: m.l - 10, y: y + bh / 2 + 4, "text-anchor": "end", class: "axlbl" }, svg).textContent = whoLabel(p.letter);
+    el("path", { d: barPath(xs(0) + 1, y, Math.max(0, xs(p.rate) - xs(0) - 1), bh, "right"), fill: css("--pos"), class: "mark" }, svg);
+    el("text", { x: xs(p.rate) + 6, y: y + bh / 2 + 4, class: "vlabel" }, svg).textContent = pct(p.rate) + "%";
+    const hit = el("rect", { x: 0, y: m.t + i * rowH, width: W, height: rowH, class: "hit" }, svg);
+    bindTip(hit, `<b>${esc(whoLabel(p.letter))}</b><br>${esc(t("pos"))} ${p.pos} · ${esc(t("neg"))} ${p.neg}<br>${esc(t("ratio"))} ${pct(p.rate)}%`);
+  });
+  // 全场平均参考线(实线 hairline + 文字)
+  const ax = xs(S.rate);
+  el("line", { x1: ax, x2: ax, y1: m.t - 6, y2: H - m.b, stroke: css("--text-2"), "stroke-width": 1.5 }, svg);
+  el("text", { x: ax, y: m.t - 10, "text-anchor": "middle", class: "tick", style: "fill:" + css("--text-2") }, svg).textContent = t("avg", { p: pct(S.rate) });
+  $("tb-person").innerHTML = table([t("participant"), t("pos"), t("neg"), t("ratio")],
+    rows.map((p) => [esc(whoLabel(p.letter)), p.pos, p.neg, pct(p.rate) + "%"]), [1, 2, 3]);
+}
+
+/* ================= 评判矩阵(状态色 + 图标 + 文字) ================= */
+function drawMatrix() {
+  const head = `<tr><th></th>${REPORT.sections.map((s) => `<th>${s.no}<br><span style="font-weight:400">${esc(secName(s.key))}</span></th>`).join("")}</tr>`;
+  const body = REPORT.participants.map((p) => {
+    const j = REPORT.judgments[p.letter] || {};
+    return `<tr><th class="row"><span class="who">${esc(p.letter)}</span>${esc(p.nickname)}</th>${REPORT.sections.map((s) => {
+      if (!s.judged) return `<td class="c-none">—</td>`;
+      const c = j[s.key];
+      if (!c) return `<td class="c-none">—</td>`;
+      if (c.r === "ok") return `<td class="c-ok"><span class="ic">✓</span>${esc(t("ok"))}</td>`;
+      if (c.r === "still") return `<td class="c-still"><span class="ic">✕</span>${esc(t("still"))}</td>`;
+      return `<td class="c-issue"><span class="ic">△</span>${esc(L().issues[c.issue] || t("issue"))}</td>`;
+    }).join("")}</tr>`;
+  }).join("");
+  $("matrix").innerHTML = head + body;
+  $("mx-legend").innerHTML = [["c-ok", "✓", t("ok")], ["c-issue", "△", t("issue")], ["c-still", "✕", t("still")], ["c-none", "—", t("none")]]
+    .map(([c, ic, txt]) => `<span><span class="${c}" style="display:inline-block;border-radius:6px;padding:0 6px;margin-right:6px;font-weight:800">${ic}</span>${esc(txt)}</span>`).join("");
+}
+
+/* ================= 图 3:PGC-ARS 六类(横向柱,积极蓝/消极红) ================= */
+function drawAffect(S) {
+  const box = $("ch-affect"); box.innerHTML = "";
+  const W = Math.max(300, box.clientWidth), rowH = 32, m = { t: 6, r: 40, b: 24, l: 112 };
+  const H = m.t + AFFECT_KEYS.length * rowH + m.b;
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": t("c_affect") }, box);
+  const max = niceMax(Math.max(...Object.values(S.affectTot)), 5);
+  const iw = W - m.l - m.r, xs = (v) => m.l + (v / max) * iw;
+  for (let v = 0; v <= max; v += max / 5) {
+    el("line", { x1: xs(v), x2: xs(v), y1: m.t, y2: H - m.b, stroke: v === 0 ? css("--axis") : css("--grid") }, svg);
+    el("text", { x: xs(v), y: H - 6, "text-anchor": "middle", class: "tick" }, svg).textContent = v;
+  }
+  const total = Object.values(S.affectTot).reduce((a, b) => a + b, 0);
+  AFFECT_KEYS.forEach((k, i) => {
+    const y = m.t + i * rowH + 6, bh = rowH - 12, v = S.affectTot[k];
+    const color = POSITIVE.has(k) ? css("--pos") : css("--neg");
+    el("text", { x: m.l - 10, y: y + bh / 2 + 4, "text-anchor": "end", class: "axlbl" }, svg).textContent = `${AFFECT_EMOJI[k]} ${L().affects[k]}`;
+    if (v > 0) el("path", { d: barPath(xs(0) + 1, y, Math.max(0, xs(v) - xs(0) - 1), bh, "right"), fill: color, class: "mark" }, svg);
+    el("text", { x: xs(v) + 6, y: y + bh / 2 + 4, class: "vlabel" }, svg).textContent = v;
+    const hit = el("rect", { x: 0, y: m.t + i * rowH, width: W, height: rowH, class: "hit" }, svg);
+    const byPerson = REPORT.participants.map((p) => `${p.letter} ${(REPORT.affects[p.letter] || {})[k] || 0}`).join(" · ");
+    bindTip(hit, `<b>${AFFECT_EMOJI[k]} ${esc(L().affects[k])}</b> (${esc(POSITIVE.has(k) ? t("pos") : t("neg"))})<br>${v} / ${total} (${total ? pct(v / total) : 0}%)<br>${esc(byPerson)}`);
+  });
+  $("lg-affect").innerHTML = legend([[css("--pos"), t("pos")], [css("--neg"), t("neg")]]);
+  $("tb-affect").innerHTML = table([t("participant"), ...AFFECT_KEYS.map((k) => `${AFFECT_EMOJI[k]} ${esc(L().affects[k])}`)],
+    REPORT.participants.map((p) => [esc(whoLabel(p.letter)), ...AFFECT_KEYS.map((k) => (REPORT.affects[p.letter] || {})[k] || 0)]),
+    [1, 2, 3, 4, 5, 6]);
+}
+
+/* ================= 图 4:运动量分数(点图 + 判定线;低于线 = 状态红 + ✕) ================= */
+function drawMotion() {
+  const box = $("ch-motion"); box.innerHTML = "";
+  const W = Math.max(320, box.clientWidth), rowH = 44, m = { t: 26, r: 24, b: 28, l: 110 };
+  const H = m.t + REPORT.participants.length * rowH + m.b;
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": t("c_motion") }, box);
+  const max = 20, iw = W - m.l - m.r, xs = (v) => m.l + (Math.min(v, max) / max) * iw;
+  const th = REPORT.still_threshold;
+  // 判定线以下区域:淡红底
+  el("rect", { x: xs(0), y: m.t - 6, width: xs(th) - xs(0), height: H - m.b - m.t + 6, fill: css("--critical-bg") }, svg);
+  for (let v = 0; v <= max; v += 5) {
+    el("line", { x1: xs(v), x2: xs(v), y1: m.t - 6, y2: H - m.b, stroke: v === 0 ? css("--axis") : css("--grid") }, svg);
+    el("text", { x: xs(v), y: H - 8, "text-anchor": "middle", class: "tick" }, svg).textContent = v;
+  }
+  el("line", { x1: xs(th), x2: xs(th), y1: m.t - 6, y2: H - m.b, stroke: css("--critical"), "stroke-width": 1.5 }, svg);
+  el("text", { x: xs(th) + 6, y: m.t - 10, class: "tick", style: "fill:" + css("--critical") + ";font-weight:700" }, svg).textContent = t("threshold", { v: th.toFixed(1) });
+  REPORT.participants.forEach((p, i) => {
+    const cy = m.t + i * rowH + rowH / 2;
+    el("line", { x1: m.l, x2: W - m.r, y1: cy, y2: cy, stroke: css("--grid") }, svg);
+    el("text", { x: m.l - 10, y: cy + 4, "text-anchor": "end", class: "axlbl" }, svg).textContent = whoLabel(p.letter);
+    const j = REPORT.judgments[p.letter] || {};
+    // 同一行的点按分数排开,标签放点上方,避免重叠
+    JUDGED.forEach((k) => {
+      const c = j[k]; if (!c) return;
+      const x = xs(c.m), below = c.m < th;
+      const g = el("g", {}, svg);
+      el("circle", { cx: x, cy, r: 9, fill: below ? css("--critical") : css("--dot"), stroke: "#fff", "stroke-width": 2, class: "mark" }, g);
+      el("text", { x, y: cy + 4, "text-anchor": "middle", style: "fill:#fff;font-size:10px;font-weight:800" }, g).textContent = below ? "✕" : secNo(k);
+      // 只给低于判定线的点加文字(节号 + 分数);其余点的节号已写在点内
+      if (below) el("text", { x, y: cy - 14, "text-anchor": "middle", class: "tick", style: "fill:" + css("--critical") + ";font-weight:700" }, g).textContent = `${secNo(k)} ${c.m.toFixed(1)}`;
+      const hit = el("circle", { cx: x, cy, r: 14, class: "hit" }, g);
+      const res = c.r === "ok" ? t("ok") : c.r === "still" ? t("still") : (L().issues[c.issue] || t("issue"));
+      bindTip(hit, `<b>${esc(whoLabel(p.letter))}</b> · ${esc(secNo(k))} ${esc(secName(k))}<br>${esc(t("score"))} ${c.m.toFixed(1)}<br>${esc(res)}`);
+    });
+  });
+  $("tb-motion").innerHTML = table([t("participant"), ...JUDGED.map((k) => `${secNo(k)} ${esc(secName(k))}`)],
+    REPORT.participants.map((p) => [esc(whoLabel(p.letter)), ...JUDGED.map((k) => {
+      const c = (REPORT.judgments[p.letter] || {})[k]; return c ? (c.m < th ? `✕ ${c.m.toFixed(1)}` : c.m.toFixed(1)) : "—";
+    })]), [1, 2, 3]);
+  const who = REPORT.follow_up.map((l) => whoLabel(l)).join("、");
+  $("callout").innerHTML = `<span class="ic">💬</span><div>${t("callout", { who: esc(who) })}</div>`;
+  $("callout").style.display = REPORT.follow_up.length ? "" : "none";
+}
+
+/* ================= 关键指标 / 表格 / 注记 ================= */
+function drawKpis(S) {
+  const nInv = REPORT.spoken.filter((x) => x.kind === "still").length;
+  const nIssue = REPORT.spoken.filter((x) => x.kind === "issue").length;
+  const nPraise = REPORT.spoken.filter((x) => x.kind === "praise").length;
+  const done = REPORT.participants.filter((p) => p.completed).length;
+  const kpi = (id, lbl, val, unit, note) => {
+    $(id).innerHTML = `<div class="lbl">${esc(lbl)}</div><div class="val">${val}${unit ? `<small>${esc(unit)}</small>` : ""}</div><div class="note">${note}</div>`;
+  };
+  kpi("kpi-people", t("k_people"), done, t("unit_people"), `<span class="icon" style="color:${css("--good")}">✓</span> ${esc(t("k_people_note"))}`);
+  kpi("kpi-pos", t("k_pos"), pct(S.rate), "%", esc(t("k_pos_note", { p: S.totPos, n: S.totN })));
+  kpi("kpi-speak", t("k_speak"), REPORT.spoken.length, t("unit_times"), esc(t("k_speak_note", { i: nIssue, s: nInv, p: nPraise })));
+  const stillWho = S.stills.map((x) => `${x.who}(${secNo(x.sec)})`).join("、") || "—";
+  kpi("kpi-still", t("k_still"), S.stills.length, t("unit_times"), `<span class="icon" style="color:${css("--critical")}">✕</span> ${esc(stillWho)}`);
+}
+function drawTables(S) {
+  $("tb-people").innerHTML = table(
+    [t("col_who"), t("col_samples"), t("col_pos"), t("col_main"), t("col_judge"), t("col_follow")],
+    S.per.map((p) => [
+      `<span class="who">${esc(p.letter)}</span>${esc(p.nickname)}`, p.n, pct(p.rate) + "%",
+      `${AFFECT_EMOJI[p.main]} ${esc(L().affects[p.main])}`, `${p.okN} / ${JUDGED.length}`,
+      p.follow ? `<span class="flag">✕ ${esc(t("follow"))}</span>` : `<span class="flag okflag">✓ ${esc(t("fine"))}</span>`,
+    ]), [1, 2, 4]);
+  $("tb-speak").innerHTML = table([t("col_time"), t("col_sec"), t("col_kind"), t("col_text")],
+    REPORT.spoken.map((x) => [x.t, secNo(x.section), `<span class="kind ${x.kind}">${esc(t("kind_" + x.kind))}</span>`, esc(x.text)]), [0]);
+}
+function drawText() {
+  document.documentElement.lang = { ja: "ja", zh: "zh-CN", en: "en" }[lang];
+  document.querySelectorAll("[data-i18n]").forEach((e) => { e.textContent = t(e.dataset.i18n); });
+  document.querySelectorAll(".lang button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.lang === lang)));
+  const dur = `${Math.floor(REPORT.duration_s / 60)}:${String(REPORT.duration_s % 60).padStart(2, "0")}`;
+  $("meta").textContent = t("meta", { d: REPORT.date, s: REPORT.start, e: REPORT.end, dur, robot: REPORT.robot, spd: REPORT.speed_deg_s });
+  $("notes").innerHTML = L().notes_list.map((x) => `<li>${x}</li>`).join("");
+  $("footer").textContent = t("footer", { id: REPORT.session_id });
+  document.title = `${t("title")} · ${REPORT.date}`;
+}
+function renderAll() {
+  const S = stats();
+  drawText(); drawKpis(S); drawSection(S); drawPerson(S); drawMatrix(); drawAffect(S); drawMotion(); drawTables(S);
+}
+
+/* ================= 下载 ================= */
+function download(name, mime, text) {
+  const blob = new Blob([text], { type: mime });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+function toCsv() {
+  const S = stats();
+  const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const lines = [];
+  lines.push(["section", "participant", "nickname", "samples", "positive", "negative", "positive_rate",
+    ...AFFECT_KEYS.map((k) => "affect_" + I18N.en.affects[k].toLowerCase()),
+    ...JUDGED.flatMap((k) => [`${k}_result`, `${k}_motion`]), "follow_up"].map(q).join(","));
+  for (const p of S.per) {
+    const j = REPORT.judgments[p.letter] || {};
+    lines.push(["participants", p.letter, p.nickname, p.n, p.pos, p.neg, p.rate.toFixed(3),
+      ...AFFECT_KEYS.map((k) => (REPORT.affects[p.letter] || {})[k] || 0),
+      ...JUDGED.flatMap((k) => j[k] ? [j[k].r === "issue" ? `issue:${j[k].issue}` : j[k].r, j[k].m] : ["", ""]),
+      p.follow ? "yes" : "no"].map(q).join(","));
+  }
+  lines.push("");
+  lines.push(["section", "time", "section_key", "participant", "kind", "text"].map(q).join(","));
+  for (const x of REPORT.spoken) lines.push(["spoken", x.t, x.section, x.name, x.kind, x.text].map(q).join(","));
+  return "﻿" + lines.join("\r\n");   // BOM:Excel 直接打开不乱码
+}
+$("btn-pdf").addEventListener("click", () => window.print());
+$("btn-csv").addEventListener("click", () => download(`${REPORT.session_id}.csv`, "text/csv;charset=utf-8", toCsv()));
+$("btn-json").addEventListener("click", () => download(`${REPORT.session_id}.json`, "application/json", JSON.stringify(REPORT, null, 2)));
+document.querySelectorAll(".lang button").forEach((b) => b.addEventListener("click", () => {
+  lang = b.dataset.lang; try { localStorage.setItem("coach-lang", lang); } catch {}
+  renderAll();
+}));
+let rz; window.addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(renderAll, 150); });
+
+renderAll();
+// 从控制台点击下载跳转过来时:?fmt=pdf 自动弹出打印(另存为 PDF),csv/json 自动下载
+const fmt = params.get("fmt");
+if (fmt === "pdf") setTimeout(() => window.print(), 700);
+else if (fmt === "csv") setTimeout(() => $("btn-csv").click(), 400);
+else if (fmt === "json") setTimeout(() => $("btn-json").click(), 400);
+</script>
+</body>
+</html>

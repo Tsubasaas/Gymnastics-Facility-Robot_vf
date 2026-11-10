@@ -170,6 +170,51 @@ def _encode(frame) -> str:
     return "data:image/jpeg;base64," + base64.b64encode(buf).decode()
 
 
+def _vlm_call(model: str, content: list):
+    """调用 DashScope 多模态接口。qwen3.5 及之后的通用模型默认开思考、慢一倍,
+    这里一律关掉(qwen3-vl-* 不支持该参数,不传)。"""
+    import dashscope
+    dashscope.base_http_api_url = "https://dashscope-intl.aliyuncs.com/api/v1"
+    extra = {} if model.startswith("qwen3-vl") else {"enable_thinking": False}
+    return dashscope.MultiModalConversation.call(
+        model=model, api_key=_api_key(), **extra,
+        messages=[{"role": "user", "content": content}])
+
+
+# "有没有在动"不交给 VLM(实测三张相同照片它仍判"在动"),改为本地像素比较:
+# 在该人边界框内,把各关键帧缩成小灰度图、模糊去噪后求相邻帧平均绝对差,
+# 取最大值。低于阈值 = 几帧之间几乎没变化 = 没在跟着做。
+# 阈值 0~255 灰度;日志会打印每人的 motion 值,现场据此校准
+# (相机噪声约 1~3,跟做时手臂区域通常明显更高)。
+STILL_DIFF = float(os.environ.get("VISION_STILL_DIFF", "4.0"))
+
+
+def _motion_score(frames: list, box) -> float | None:
+    if len(frames) < 2 or not (isinstance(box, list) and len(box) == 4):
+        return None
+    try:
+        x1, y1, x2, y2 = [max(0, min(1000, int(v))) for v in box]
+    except (TypeError, ValueError):
+        return None
+    if x2 - x1 < 20 or y2 - y1 < 20:
+        return None
+    crops = []
+    for f in frames:
+        h, w = f.shape[:2]
+        c = f[y1 * h // 1000:y2 * h // 1000, x1 * w // 1000:x2 * w // 1000]
+        c = cv2.cvtColor(cv2.resize(c, (96, 128)), cv2.COLOR_BGR2GRAY)
+        crops.append(cv2.GaussianBlur(c, (5, 5), 0).astype(np.float32))
+    return max(float(np.mean(np.abs(a - b))) for a, b in zip(crops, crops[1:]))
+
+
+def _is_moving(frames: list, box, name: str) -> bool:
+    score = _motion_score(frames, box)
+    if score is None:          # 没框/框无效:拿不准 = 当作在动,防误提醒
+        return True
+    print(f"[motion] {name} = {score:.1f}(阈值 {STILL_DIFF})")
+    return score >= STILL_DIFF
+
+
 def _build_prompt(sec: dict) -> str:
     issue_desc = ",".join(sec["issues"])
     letters = "、".join(rules.NAMES)
@@ -188,9 +233,11 @@ def _build_prompt(sec: dict) -> str:
         "没有把握就算达标(ok=true);\n"
         '4. 再给一个 energy 字段:动作有力、精神饱满 = "high";'
         '达标但明显蔫、幅度偏小 = "low";拿不准填 "high"。\n'
+        "5. 再给一个 box 字段:该人在最后一张照片里的整体边界框 [x1,y1,x2,y2],"
+        "坐标归一化到 0~1000。\n"
         "只输出JSON数组,不要其他文字,例如:\n"
-        '[{"name":"A","ok":true,"energy":"high"},'
-        '{"name":"B","ok":false,"issue":"...","energy":"low"}]\n'
+        '[{"name":"A","ok":true,"energy":"high","box":[100,80,420,1000]},'
+        '{"name":"B","ok":false,"issue":"...","energy":"low","box":[500,90,800,1000]}]\n'
         "画面里没有人则输出 []。")
 
 
@@ -204,9 +251,7 @@ def vlm_judge(section_key: str, frames: list) -> list:
     content.append({"text": _build_prompt(sec)})
     t0 = time.time()
     try:
-        rsp = dashscope.MultiModalConversation.call(
-            model=VLM_MODEL, api_key=_api_key(),
-            messages=[{"role": "user", "content": content}])
+        rsp = _vlm_call(VLM_MODEL, content)
     except Exception as e:
         print(f"[vlm] 调用异常:{e}")
         return []
@@ -232,13 +277,132 @@ def vlm_judge(section_key: str, frames: list) -> list:
             issue = None
         out.append({"name": name, "ok": bool(item.get("ok", True)) or not issue,
                     "issue": issue,
-                    "energy": str(item.get("energy", "high")).lower()})
+                    "energy": str(item.get("energy", "high")).lower(),
+                    "moving": _is_moving(frames, item.get("box"), name)})
     print(f"[vlm] {section_key} {time.time() - t0:.1f}s -> {out}")
     return out
 
 
-PREVIEW_MODEL = os.environ.get("VISION_PREVIEW_MODEL", "qwen3-vl-flash")
+# 画面标注(认人+动作+表情)。实测(真实画面、关思考,3次平均):
+#   qwen3.7-flash 2.65s / qwen3.7-plus 3.28s / qwen3-vl-plus 3.67s /
+#   qwen3.8-flash 13.5s(反而慢);qwen3-vl-flash 在部分国际版账号上 404。
+PREVIEW_MODEL = os.environ.get("VISION_PREVIEW_MODEL", "qwen3.7-flash")
 PREVIEW_INTERVAL = 4.0     # 空闲时每隔几秒刷新一次画面标注
+# 画面标注里的动作候选(与广播体操各节对应)与表情两分类(BGR 颜色)
+PREVIEW_ACTIONS = ["站立", "双臂上举", "双臂侧平举", "抡臂", "扩胸后仰",
+                   "体侧屈", "弯腰前倾", "挥手", "走动", "其他"]
+MOOD_COLORS = {"积极": (80, 220, 80), "消极": (60, 60, 255), "?": (180, 180, 180)}
+
+# 表情判定依据 PGC-ARS(Philadelphia Geriatric Center Affect Rating Scale,
+# Lawton et al., 1996):养老机构用的观察式情绪量表,3类积极 + 3类消极。
+# 原量表是受训观察者在约10分钟内按持续时长打分;这里只借用其类别与
+# 可观察特征做单帧粗分类,不是量表的正式施测,结果仅供现场参考。
+# 类别 → (积极/消极, 可观察特征, 日语显示名)
+PGC_AFFECTS = {
+    "愉悦": ("积极", "微笑、大笑、开心地唱歌或拍手", "喜び"),
+    "兴趣": ("积极", "目光追随动作或机器人、专注的表情、点头回应、积极跟做", "興味"),
+    "满足": ("积极", "放松的姿势与面部、安静平和、动作舒缓", "満足"),
+    "愤怒": ("消极", "咬牙、做鬼脸、抿嘴、眯眼、怒视、用力挥手推开", "怒り"),
+    "焦虑": ("消极", "皱眉、紧张的面部肌肉、坐立不安、反复搓手、四处张望、叹气、退缩",
+             "不安"),
+    "悲伤": ("消极", "哭泣、流泪、叹气、嘴角下垂、低头垂眼、面部松垮无神", "悲しみ"),
+}
+
+
+def _affect_guide() -> str:
+    return "".join(f"  · {k}({v[0]}):{v[1]};\n" for k, v in PGC_AFFECTS.items())
+
+
+# 每类情绪的 emoji(画在人物框右上角,底下垫积极绿/消极红/看不清灰的圆)
+AFFECT_EMOJI = {"愉悦": "😄", "兴趣": "👀", "满足": "😌",
+                "愤怒": "😠", "焦虑": "😟", "悲伤": "😢", "?": "❔"}
+EMOJI_SIZE = 56
+EMOJI_FONT = r"C:\Windows\Fonts\seguiemj.ttf"   # Windows 自带彩色 emoji 字体
+_emoji_cache: dict = {}
+
+
+def _emoji_sprite(ch: str):
+    """emoji → BGRA 小图(带圆形底色,按情绪上色);缺 Pillow/字体时返回 None。"""
+    if ch in _emoji_cache:
+        return _emoji_cache[ch]
+    sprite = None
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+        affect = next((k for k, v in AFFECT_EMOJI.items() if v == ch), "?")
+        mood = PGC_AFFECTS[affect][0] if affect in PGC_AFFECTS else "?"
+        b, g, r = MOOD_COLORS[mood]
+        pad = 6
+        size = EMOJI_SIZE + pad * 2
+        img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        draw.ellipse((0, 0, size - 1, size - 1), fill=(r, g, b, 200))
+        if ch == "❔":     # 灰色 ❔ 压在灰底上看不见,改画白色粗体问号
+            font = ImageFont.truetype(r"C:\Windows\Fonts\segoeuib.ttf",
+                                      int(EMOJI_SIZE * 0.75))
+            draw.text((size / 2, size / 2), "?", font=font,
+                      fill=(255, 255, 255, 255), anchor="mm")
+        else:
+            font = ImageFont.truetype(EMOJI_FONT, int(EMOJI_SIZE * 0.8))
+            draw.text((size / 2, size / 2), ch, font=font, embedded_color=True,
+                      anchor="mm")
+        sprite = cv2.cvtColor(np.array(img), cv2.COLOR_RGBA2BGRA)
+    except Exception as e:
+        print(f"[show] emoji 不可用,仅显示文字:{e}")
+    _emoji_cache[ch] = sprite
+    return sprite
+
+
+def _overlay(dst, sprite, x: int, y: int) -> None:
+    """把 BGRA 小图按 alpha 混合贴到 dst 的 (x,y),越界部分自动裁掉。"""
+    h, w = sprite.shape[:2]
+    x0, y0 = max(0, x), max(0, y)
+    x1, y1 = min(dst.shape[1], x + w), min(dst.shape[0], y + h)
+    if x0 >= x1 or y0 >= y1:
+        return
+    s = sprite[y0 - y:y1 - y, x0 - x:x1 - x]
+    a = s[:, :, 3:4].astype(np.float32) / 255.0
+    roi = dst[y0:y1, x0:x1]
+    roi[:] = (s[:, :, :3] * a + roi * (1 - a)).astype(dst.dtype)
+
+
+LABEL_W = 250   # 标签深色底的宽度
+
+
+def _draw_person(disp, p: dict) -> None:
+    """在 960x540 的显示帧上画一个人:框 + 左上角标签(名字/动作/表情) + emoji。"""
+    h, w = disp.shape[:2]
+    x1, y1, x2, y2 = (int(p["box"][0] / 1000 * w), int(p["box"][1] / 1000 * h),
+                      int(p["box"][2] / 1000 * w), int(p["box"][3] / 1000 * h))
+    color = (0, 255, 0) if p["name"] in rules.NAMES else (0, 200, 255)
+    cv2.rectangle(disp, (x1, y1), (x2, y2), color, 2)
+    # 标签垫半透明深色底,白墙背景上也看得清
+    mood = p.get("mood", "?")
+    affect = p.get("affect", "?")
+    ly = max(0, y1)
+    roi = disp[ly:ly + 92, x1:x1 + LABEL_W]
+    roi[:] = (roi * 0.35).astype(roi.dtype)
+    cv2.putText(disp, p["name"], (x1 + 6, ly + 32),
+                cv2.FONT_HERSHEY_SIMPLEX, 1.1, color, 3)
+    action = p.get("action", "")
+    cv2.putText(disp, ACTION_JA.get(action, action), (x1 + 6, ly + 60),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+    label = MOOD_JA.get(mood, mood)
+    if affect in PGC_AFFECTS:
+        label += f"({PGC_AFFECTS[affect][2]})"
+    cv2.putText(disp, f"表情:{label}", (x1 + 6, ly + 86),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7,
+                MOOD_COLORS.get(mood, MOOD_COLORS["?"]), 2)
+    # emoji 放框右上角;框太窄时挪到标签右侧,不压住文字
+    sprite = _emoji_sprite(AFFECT_EMOJI.get(affect, "❔"))
+    if sprite is not None:
+        ex = max(x2 - sprite.shape[1] - 4, x1 + LABEL_W + 4)
+        _overlay(disp, sprite, ex, ly + 4)
+# 调试窗口上的显示文字(日语);VLM 提示词和内部键仍用中文
+ACTION_JA = {"站立": "直立", "双臂上举": "両腕を上げる", "双臂侧平举": "両腕を横に",
+             "抡臂": "腕を回す", "扩胸后仰": "胸をそらす", "体侧屈": "体を横に曲げる",
+             "弯腰前倾": "前かがみ", "挥手": "手を振る", "走动": "歩いている",
+             "其他": "その他"}
+MOOD_JA = {"积极": "ポジティブ", "消极": "ネガティブ", "?": "?"}
 
 
 def vlm_locate(frame) -> list:
@@ -249,14 +413,20 @@ def vlm_locate(frame) -> list:
     letters = "、".join(rules.NAMES)
     prompt = (
         f"找出画面中每一位能看到脸或上半身的人,他们胸前可能贴着大字母标识({letters})。\n"
-        '只输出JSON数组,例如 [{"name":"A","box":[120,80,400,900]}]。\n'
-        "box 是该人整体的边界框 [x1,y1,x2,y2],坐标归一化到 0~1000。\n"
-        ' 看不清字母的人 name 填 "?"。画面里没有人输出 []。')
+        "对每个人给出:\n"
+        "- box: 该人整体的边界框 [x1,y1,x2,y2],坐标归一化到 0~1000;\n"
+        f'- name: 胸前字母,看不清填 "?";\n'
+        f"- action: 当前动作,从这些里选最接近的一个:{'、'.join(PREVIEW_ACTIONS)};\n"
+        "- affect: 按 Philadelphia Geriatric Center Affect Rating Scale(PGC-ARS)"
+        "的6类情绪,选画面中最明显的一类:\n"
+        f"{_affect_guide()}"
+        "  平静、无明显情绪时按「满足」;只有出现上述消极特征才选消极类;"
+        '戴口罩、背对、低头等看不清脸时填 "?"。\n'
+        '只输出JSON数组,例如 [{"name":"A","box":[120,80,400,900],'
+        '"action":"双臂上举","affect":"愉悦"}]。画面里没有人输出 []。')
     try:
-        rsp = dashscope.MultiModalConversation.call(
-            model=PREVIEW_MODEL, api_key=_api_key(),
-            messages=[{"role": "user", "content": [
-                {"image": _encode(frame)}, {"text": prompt}]}])
+        rsp = _vlm_call(PREVIEW_MODEL,
+                        [{"image": _encode(frame)}, {"text": prompt}])
     except Exception:
         return []
     if rsp.status_code != 200:
@@ -279,7 +449,14 @@ def vlm_locate(frame) -> list:
         except (TypeError, ValueError):
             continue
         name = str(item.get("name", "?")).strip().upper()
-        out.append({"name": name if name in rules.NAMES else "?", "box": box})
+        action = str(item.get("action", "")).strip()
+        affect = str(item.get("affect", "?")).strip()
+        if affect not in PGC_AFFECTS:
+            affect = "?"
+        out.append({"name": name if name in rules.NAMES else "?", "box": box,
+                    "action": action if action in PREVIEW_ACTIONS else "其他",
+                    "affect": affect,
+                    "mood": PGC_AFFECTS[affect][0] if affect != "?" else "?"})
     return out
 
 
@@ -295,8 +472,9 @@ class Director:
         self.history: list = []            # [(节, 评判结果, 播出内容)]
 
     def decide(self, section_key: str, results: list) -> list:
-        for r in results:                  # 汇报统计:不达标或没劲都算"动作偏小"
-            if (not r["ok"] and r["issue"]) or r.get("energy") == "low":
+        for r in results:                  # 汇报统计:不达标/没劲/没在动都算"动作偏小"
+            if (not r["ok"] and r["issue"]) or r.get("energy") == "low" \
+                    or not r.get("moving", True):
                 self.small.add(r["name"])
         if not results:
             self.history.append((section_key, [], []))
@@ -307,8 +485,13 @@ class Director:
         detected = {r["name"]: r for r in results}
         star = rules.ROTATION.get(section_key)
 
+        still = [r for r in results if not r.get("moving", True)]
         flagged = [r for r in results if not r["ok"] and r["issue"]]
-        if flagged:                        # 有明确不达标:纠正优先
+        if still:                          # 有人完全没在动:最优先,先邀请一起动
+            target = next((r for r in still if r["name"] not in self.featured),
+                          still[0])
+            obs = [{"name": target["name"], "advice": rules.STILL}]
+        elif flagged:                      # 有明确不达标:纠正优先
             # 还没被点过名的优先(避免同一人连续两节被批评),其次主角
             target = (next((r for r in flagged
                             if r["name"] not in self.featured), None)
@@ -387,6 +570,9 @@ def main() -> int:
     ap.add_argument("--standalone", action="store_true",
                     help="不读时钟文件,回车手动对齐 demo 开始")
     ap.add_argument("--show", action="store_true", help="显示调试窗口")
+    ap.add_argument("--web", action="store_true",
+                    help="打开浏览器控制台(实时画面/参与者/启动演出程序)")
+    ap.add_argument("--port", type=int, default=None, help="--web 端口,默认 8765")
     args = ap.parse_args()
 
     grabber = FrameGrabber(args)
@@ -401,28 +587,123 @@ def main() -> int:
     keyframes: list = []
     kf_idx = 0
     judging = False
-    status = "等待时钟…"
+    status = "開始待ち…"
     preview = {"people": [], "wall": 0.0, "busy": False, "last_try": 0.0}
+    alert = {"names": [], "wall": 0.0}   # 最近一次评判里没在动的人(画面红字提示)
+    ALERT_SECONDS = 8.0
+    last_judge: dict = {}                # 最近一次评判(网页参与者卡片用)
+    events: list = []                    # 网页事件日志(最新在后,只留 80 条)
+
+    def log_event(kind: str, text: str) -> None:
+        events.append({"t": time.time(), "kind": kind, "text": text})
+        del events[:-80]
 
     def judge_async(section_key, frames, my_seq):
         nonlocal judging
         results = vlm_judge(section_key, frames)
         if my_seq != seq:      # 已有更新的评判发起:旧结果作废,不覆盖不污染
             print(f"[vlm] {section_key} 结果迟到(seq{my_seq}<{seq}),丢弃")
+            log_event("warn", f"{section_key} の判定が遅延したため破棄")
             return
-        write_obs(section_key, my_seq, director.decide(section_key, results))
+        still = [r["name"] for r in results if not r.get("moving", True)]
+        if still:
+            alert.update(names=still, wall=time.time())
+            print(f"[vlm] {section_key} 没在动: {still}")
+            log_event("alert", f"{','.join(still)} が動いていません")
+        obs = director.decide(section_key, results)
+        last_judge.update(section=section_key, results=results, obs=obs,
+                          wall=time.time())
+        log_event("judge", f"{section_key} 判定: " + (", ".join(
+            f"{r['name']}={'OK' if r['ok'] else r['issue']}" for r in results)
+            or "人物なし"))
+        for o in obs:
+            log_event("speak", f"{o.get('name', '')}さん、{o.get('advice', '')}")
+        write_obs(section_key, my_seq, obs)
         judging = False
+
+    affect_log: list = []                # 每次认出 A/B 且看清表情就记一条(网页表情日志)
 
     def preview_async(frame):
         people = vlm_locate(frame)
-        preview.update(people=people, wall=time.time(), busy=False)
+        now = time.time()
+        for p in people:
+            if p["name"] in rules.NAMES and p.get("affect") in PGC_AFFECTS:
+                affect_log.append({"t": now, "name": p["name"],
+                                   "affect": p["affect"], "mood": p["mood"],
+                                   "action": p.get("action", "")})
+        del affect_log[:-500]
+        preview.update(people=people, wall=now, busy=False)
 
     print(f"[run] 模型={VLM_MODEL} 评判节={list(rules.SECTIONS)}")
+    win = "vision_coach (q quit)"
+    if args.show:
+        # 可缩放窗口:画面随窗口拉伸/最大化,保持 16:9 比例
+        cv2.namedWindow(win, cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO)
+        cv2.resizeWindow(win, 1280, 720)
+    render = args.show or args.web
+    live = {"key": None, "beat": None, "frame_wall": 0.0}
+    web_frame = None
+    if args.web:
+        import vision_web
+
+        def web_state() -> dict:
+            now = time.time()
+            fresh = now - preview["wall"] < 4 * PREVIEW_INTERVAL
+            return {
+                "now": now,
+                "status": status,
+                "clock_active": clock.active,
+                "section": live["key"],
+                "beat": live["beat"],
+                "camera_ok": now - live["frame_wall"] < 2.0,
+                "judging": judging,
+                "people": preview["people"] if fresh else [],
+                "people_age": now - preview["wall"] if preview["wall"] else None,
+                "alert": alert["names"] if now - alert["wall"] < ALERT_SECONDS else [],
+                "last_judge": last_judge,
+                "events": events[-40:],
+                "affect_log": affect_log[-150:],
+                "affect_stats": {
+                    n: {"pos": sum(1 for e in affect_log
+                                   if e["name"] == n and e["mood"] == "积极"),
+                        "neg": sum(1 for e in affect_log
+                                   if e["name"] == n and e["mood"] == "消极")}
+                    for n in rules.NAMES},
+                "names": list(rules.NAMES),
+                "nicknames": dict(rules.NICKNAMES),
+                "added_at": dict(rules.ADDED_AT),
+                "max_participants": rules.MAX_PARTICIPANTS,
+                "sections": [{"key": k, "title": s["title"]}
+                             for k, s in rules.SECTIONS.items()],
+                "models": {"judge": VLM_MODEL, "preview": PREVIEW_MODEL},
+                "still_diff": STILL_DIFF,
+                "affects": {k: {"mood": v[0], "ja": v[2], "emoji": AFFECT_EMOJI[k]}
+                            for k, v in PGC_AFFECTS.items()},
+                "actions_ja": ACTION_JA,
+            }
+
+        def set_participants(opts: dict) -> dict:
+            before = list(rules.NAMES)
+            rules.set_participants(opts.get("participants") or [])
+            print(f"[web] 参与者更新: {before} -> {rules.NAMES}")
+            log_event("info", "参加者: " + ", ".join(
+                f"{n}({rules.NICKNAMES[n]})" if rules.NICKNAMES.get(n) else n
+                for n in rules.NAMES))
+            return {"names": list(rules.NAMES), "nicknames": dict(rules.NICKNAMES),
+                    "added_at": dict(rules.ADDED_AT)}
+
+        web_frame, _launcher = vision_web.serve(
+            web_state, port=args.port or vision_web.DEFAULT_PORT,
+            actions={"/api/participants": set_participants})
+        log_event("info", "コンソール起動")
     while True:
         key, beat = clock.now()
+        live.update(key=key, beat=beat)
         if key != cur_section:
             cur_section = key
             keyframes, kf_idx = [], 0
+            if key:
+                log_event("section", f"{key} 開始")
         if key in rules.SECTIONS and beat is not None:
             beats = rules.SECTIONS[key]["keyframe_beats"]
             if kf_idx < len(beats) and beat >= beats[kf_idx]:
@@ -430,18 +711,18 @@ def main() -> int:
                 if frame is not None:
                     keyframes.append(frame)
                 kf_idx += 1
-                status = f"{key} 拍{beat:.1f} 采样{len(keyframes)}/{len(beats)}"
+                status = f"{key} {beat:.1f}拍 撮影{len(keyframes)}/{len(beats)}"
                 if kf_idx == len(beats) and keyframes:
                     judging = True         # 不做互斥:新评判直接发起,旧的作废
                     seq += 1
                     threading.Thread(
                         target=judge_async, args=(key, list(keyframes), seq),
                         daemon=True).start()
-                    status = f"{key} 评判中…"
+                    status = f"{key} 判定中…"
         elif key is None:
-            status = "等待时钟…" if not args.standalone else "空窗"
+            status = "開始待ち…" if not args.standalone else "待機中"
 
-        if args.show:
+        if render:
             # 空闲时定期刷新"识别到谁"的标注;演出进行中完全暂停(不抢带宽)
             now = time.time()
             if not clock.active and not preview["busy"] and \
@@ -453,25 +734,32 @@ def main() -> int:
                                      daemon=True).start()
             img = grabber.latest()
             if img is not None:
+                live["frame_wall"] = now
                 disp = cv2.resize(img, (960, 540))
                 if now - preview["wall"] < 4 * PREVIEW_INTERVAL:
                     for p in preview["people"]:
-                        x1, y1, x2, y2 = (
-                            int(p["box"][0] / 1000 * 960),
-                            int(p["box"][1] / 1000 * 540),
-                            int(p["box"][2] / 1000 * 960),
-                            int(p["box"][3] / 1000 * 540))
-                        known = p["name"] in rules.NAMES
-                        color = (0, 255, 0) if known else (0, 200, 255)
-                        cv2.rectangle(disp, (x1, y1), (x2, y2), color, 2)
-                        cv2.putText(disp, p["name"], (x1 + 4, max(30, y1 + 34)),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 1.2, color, 3)
-                    found = ",".join(p["name"] for p in preview["people"]) or "no one"
-                    cv2.putText(disp, f"seen: {found}", (10, 65),
+                        _draw_person(disp, p)
+                if web_frame is not None:
+                    # 网页:画面只带人物框/emoji,状态和提示由页面本身显示
+                    web_frame.publish(disp)
+                if not args.show:
+                    time.sleep(0.03)
+                    continue
+                if now - preview["wall"] < 4 * PREVIEW_INTERVAL:
+                    found = ",".join(p["name"] for p in preview["people"]) or "なし"
+                    cv2.putText(disp, f"検出: {found}", (10, 65),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
                 cv2.putText(disp, status, (10, 30),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-                cv2.imshow("vision_coach (q quit)", disp)
+                if alert["names"] and now - alert["wall"] < ALERT_SECONDS:
+                    # 没在动的人:画面顶部居中红底白字,持续 ALERT_SECONDS 秒
+                    msg = f"⚠ {','.join(alert['names'])}: 動いていません"
+                    disp[90:140, 180:780] = (disp[90:140, 180:780] * 0.3
+                                             + np.array([0, 0, 200]) * 0.7
+                                             ).astype(disp.dtype)
+                    cv2.putText(disp, msg, (200, 127),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
+                cv2.imshow(win, disp)
                 if cv2.waitKey(1) & 0xFF == ord("q"):
                     return 0
         time.sleep(0.03)
