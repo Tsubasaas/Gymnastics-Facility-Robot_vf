@@ -10,7 +10,7 @@
 
 启动演出程序 = 原来"终端 2"那条命令。安全确认流程不变:ENABLE REAL ROBOT
 和每个动作的 RUN 随机码仍然在弹出的控制台窗口里由现场人员输入,网页不代输。
-紧急停止 / 导入音乐 / 下载报告 目前只有界面,未接入实际功能。
+紧急停止 / 导入音乐目前只有界面。报告默认读取真实记录，mode=sample 保留四人案例。
 """
 
 from __future__ import annotations
@@ -24,12 +24,14 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import urlsplit, parse_qs
+from report_data import load_report, evidence_path
 
 import cv2
 
 PROJECT_DIR = Path(__file__).resolve().parent
 UI_FILE = PROJECT_DIR / "vision_ui.html"
-REPORT_FILE = PROJECT_DIR / "vision_report.html"   # 场次报告(目前为虚拟示例数据)
+REPORT_FILE = PROJECT_DIR / "vision_report.html"   # 真实记录 + 显式四人示例模式
 DEFAULT_PORT = int(os.environ.get("VISION_WEB_PORT", "8765"))
 STREAM_FPS = 12
 
@@ -144,6 +146,24 @@ def serve(get_state, port: int = DEFAULT_PORT, open_browser: bool = True,
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
+            elif path.startswith("/evidence/"):
+                try:
+                    body = evidence_path(PROJECT_DIR / "records", path.removeprefix("/evidence/")).read_bytes()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "image/jpeg")
+                    self.send_header("Cache-Control", "no-store")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                except (OSError, ValueError):
+                    self._json(404, {"error": "Evidence unavailable"})
+            elif path == "/api/report":
+                try:
+                    record_id = parse_qs(urlsplit(self.path).query).get("id", [None])[0]
+                    report = load_report(PROJECT_DIR / "records", record_id)
+                    self._json(200 if report else 404, report or {"error": "No session records"})
+                except (OSError, ValueError, KeyError, TypeError) as e:
+                    self._json(400, {"error": str(e)})
             elif path == "/api/state":
                 state = get_state()
                 state["robot"] = launcher.status()

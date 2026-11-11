@@ -26,6 +26,7 @@ import random
 import sys
 import threading
 import time
+import uuid
 from pathlib import Path
 
 for _s in (sys.stdout, sys.stderr):
@@ -37,6 +38,7 @@ import numpy as np
 
 import demo_viewer
 import vision_rules as rules
+from session_events import append_event, read_events
 
 PROJECT_DIR = Path(__file__).resolve().parent
 CLOCK_PATH = PROJECT_DIR / "vision_clock.json"
@@ -65,6 +67,7 @@ class FrameGrabber:
     def __init__(self, args):
         self.args = args
         self.frame = None          # 最新 BGR 帧
+        self.captured_at = 0.0
         self.lock = threading.Lock()
         self.ok = False
 
@@ -73,7 +76,14 @@ class FrameGrabber:
 
     def latest(self):
         with self.lock:
-            return None if self.frame is None else self.frame.copy()
+            return (None if self.frame is None or time.time() - self.captured_at > 2.0
+                    else self.frame.copy())
+
+    def sample(self):
+        with self.lock:
+            if self.frame is None or time.time() - self.captured_at > 2.0:
+                return None, None
+            return self.frame.copy(), self.captured_at
 
     def _run(self):
         if self.args.cam is not None:
@@ -86,6 +96,7 @@ class FrameGrabber:
                 if ret:
                     with self.lock:
                         self.frame, self.ok = frame, True
+                        self.captured_at = time.time()
                 else:
                     time.sleep(0.2)
         else:
@@ -109,6 +120,7 @@ class FrameGrabber:
                 if img is not None:
                     with self.lock:
                         self.frame, self.ok = img, True
+                        self.captured_at = time.time()
 
 
 # ---------------- 时钟:跟随 demo_voice 的播放时钟 ----------------
@@ -120,10 +132,9 @@ class Clock:
         self.standalone = standalone
         self.t0 = None
         self.active = False     # 演出时钟是否在走(用于演出中暂停预览标注)
+        self.session_id = uuid.uuid4().hex if standalone else None
         # 通し时间轴 [(key, start_s, end_s)],只留 ①~⑤
-        self.timeline = [(k, s, e) for k, _n, s, e in
-                         demo_viewer.section_timeline() if k in rules.SECTIONS
-                         or k == "1_senobi"]
+        self.timeline = [(k, s, e) for k, _n, s, e in demo_viewer.section_timeline()]
 
     def start_standalone(self):
         input(">> demo 开始的瞬间按回车对齐时钟 <<")
@@ -140,14 +151,19 @@ class Clock:
             if self.t0 is None:
                 self.active = False
                 return None, None
-            self.active = True
-            return self._from_full_t(time.time() - self.t0)
+            elapsed = time.time() - self.t0
+            self.active = elapsed <= max(end for _, _, end in self.timeline)
+            return self._from_full_t(elapsed) if self.active else (None, None)
         try:
             raw = json.loads(CLOCK_PATH.read_text("utf-8"))
         except (OSError, ValueError):
             self.active = False
             return None, None
         age = time.time() - raw.get("wall", 0)
+        session_id = raw.get("session_id")
+        self.session_id = (session_id if isinstance(session_id, str)
+                           and len(session_id) == 32
+                           and all(c in "0123456789abcdef" for c in session_id) else None)
         self.active = age <= 2.0
         if age > 2.0:                      # 时钟停更:demo 没在跑
             return None, None
@@ -155,7 +171,7 @@ class Clock:
         key = raw["key"]
         if key in FULL_KEYS:
             return self._from_full_t(t)
-        if key in rules.SECTIONS:
+        if key in {k for k, _, _ in self.timeline}:
             return key, t / demo_viewer.BEAT - 1.0   # 单节网格有1拍起手偏移
         return None, None
 
@@ -226,11 +242,11 @@ def _build_prompt(sec: dict) -> str:
         "不算,宁缺毋滥,绝不要凑数。只评正在跟着做操的参与者;明显只是"
         "旁观、坐着、路过的人不要输出。\n"
         "任务:对每一位符合条件的参与者:\n"
-        f"1. 用胸前字母确定身份;看不清字母时按画面从左到右 = {letters};\n"
+        "1. 只用清晰可读的胸前字母确定身份;看不清时不要输出该人，禁止按位置猜测身份。\n"
         "2. 综合几张照片判断是否达标——取其中动作幅度最大的一张来判断,"
         "单张照片处于动作中途是正常的,不要因此判不达标;\n"
         f"3. 若明确不达标,issue 从这些里选一个:{issue_desc}。"
-        "没有把握就算达标(ok=true);\n"
+        "没有把握时 ok=null，issue=null，不要推断为达标。\n"
         '4. 再给一个 energy 字段:动作有力、精神饱满 = "high";'
         '达标但明显蔫、幅度偏小 = "low";拿不准填 "high"。\n'
         "5. 再给一个 box 字段:该人在最后一张照片里的整体边界框 [x1,y1,x2,y2],"
@@ -254,10 +270,10 @@ def vlm_judge(section_key: str, frames: list) -> list:
         rsp = _vlm_call(VLM_MODEL, content)
     except Exception as e:
         print(f"[vlm] 调用异常:{e}")
-        return []
+        return None
     if rsp.status_code != 200:
         print(f"[vlm] {rsp.code}: {rsp.message}")
-        return []
+        return None
     text = rsp.output.choices[0].message.content
     if isinstance(text, list):             # dashscope 返回 [{'text': ...}]
         text = "".join(p.get("text", "") for p in text)
@@ -266,19 +282,35 @@ def vlm_judge(section_key: str, frames: list) -> list:
         data = json.loads(text)
     except ValueError:
         print(f"[vlm] JSON解析失败:{text[:120]!r}")
-        return []
+        return None
+    if not isinstance(data, list):
+        return None
     out = []
+    counts = {}
     for item in data if isinstance(data, list) else []:
+        if isinstance(item, dict):
+            name = str(item.get("name", "")).strip().upper()
+            counts[name] = counts.get(name, 0) + 1
+    for item in data if isinstance(data, list) else []:
+        if not isinstance(item, dict):
+            continue
         name = str(item.get("name", "")).strip().upper()
-        if name not in rules.NAMES:
+        if name not in rules.NAMES or counts[name] != 1:
             continue
         issue = item.get("issue")
         if issue not in sec["issues"]:
             issue = None
-        out.append({"name": name, "ok": bool(item.get("ok", True)) or not issue,
+        score = _motion_score(frames, item.get("box"))
+        ok = item.get("ok")
+        if not isinstance(ok, bool) or (ok is False and issue is None):
+            ok = None
+        if ok is not False:
+            issue = None
+        out.append({"name": name, "ok": ok, "raw_model_result": item,
                     "issue": issue,
                     "energy": str(item.get("energy", "high")).lower(),
-                    "moving": _is_moving(frames, item.get("box"), name)})
+                    "box": item.get("box"), "motion_score": score,
+                    "moving": None if score is None else score >= STILL_DIFF})
     print(f"[vlm] {section_key} {time.time() - t0:.1f}s -> {out}")
     return out
 
@@ -420,7 +452,7 @@ def vlm_locate(frame) -> list:
         "- affect: 按 Philadelphia Geriatric Center Affect Rating Scale(PGC-ARS)"
         "的6类情绪,选画面中最明显的一类:\n"
         f"{_affect_guide()}"
-        "  平静、无明显情绪时按「满足」;只有出现上述消极特征才选消极类;"
+        "  只有清晰可见的表情特征才选对应类别，不根据动作或站位推断情绪;拿不准填 '?'。"
         '戴口罩、背对、低头等看不清脸时填 "?"。\n'
         '只输出JSON数组,例如 [{"name":"A","box":[120,80,400,900],'
         '"action":"双臂上举","affect":"愉悦"}]。画面里没有人输出 []。')
@@ -428,9 +460,9 @@ def vlm_locate(frame) -> list:
         rsp = _vlm_call(PREVIEW_MODEL,
                         [{"image": _encode(frame)}, {"text": prompt}])
     except Exception:
-        return []
+        return None
     if rsp.status_code != 200:
-        return []
+        return None
     text = rsp.output.choices[0].message.content
     if isinstance(text, list):
         text = "".join(p.get("text", "") for p in text)
@@ -438,15 +470,21 @@ def vlm_locate(frame) -> list:
     try:
         data = json.loads(text)
     except ValueError:
-        return []
+        return None
+    if not isinstance(data, list):
+        return None
     out = []
     for item in data if isinstance(data, list) else []:
+        if not isinstance(item, dict):
+            continue
         box = item.get("box") or item.get("bbox_2d")
         if not (isinstance(box, list) and len(box) == 4):
             continue
         try:
             box = [max(0, min(1000, int(v))) for v in box]
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if box[0] >= box[2] or box[1] >= box[3]:
             continue
         name = str(item.get("name", "?")).strip().upper()
         action = str(item.get("action", "")).strip()
@@ -454,6 +492,7 @@ def vlm_locate(frame) -> list:
         if affect not in PGC_AFFECTS:
             affect = "?"
         out.append({"name": name if name in rules.NAMES else "?", "box": box,
+                    "raw_model_result": item,
                     "action": action if action in PREVIEW_ACTIONS else "其他",
                     "affect": affect,
                     "mood": PGC_AFFECTS[affect][0] if affect != "?" else "?"})
@@ -466,7 +505,12 @@ LAST_EVAL = list(rules.SECTIONS)[-1]       # 最后一个评判节(=④)
 
 
 class Director:
-    def __init__(self):
+    def __init__(self, session_id=None):
+        self.session_id = session_id or uuid.uuid4().hex
+        self.started_at = time.strftime("%Y-%m-%d %H:%M:%S")
+        self.nicknames = dict(rules.NICKNAMES)
+        self.names = list(rules.NAMES)
+        self.audit = {}
         self.featured: set[str] = set()    # 整场被点过名的人
         self.small: set[str] = set()       # 整场动作偏小的人(不达标或蔫)
         self.history: list = []            # [(节, 评判结果, 播出内容)]
@@ -474,18 +518,16 @@ class Director:
     def decide(self, section_key: str, results: list) -> list:
         for r in results:                  # 汇报统计:不达标/没劲/没在动都算"动作偏小"
             if (not r["ok"] and r["issue"]) or r.get("energy") == "low" \
-                    or not r.get("moving", True):
+                    or r.get("moving") is False:
                 self.small.add(r["name"])
         if not results:
             self.history.append((section_key, [], []))
-            if section_key == LAST_EVAL:
-                self._write_report([])
             return []                      # 没识别到人 = 不出声
         sec = rules.SECTIONS[section_key]
         detected = {r["name"]: r for r in results}
         star = rules.ROTATION.get(section_key)
 
-        still = [r for r in results if not r.get("moving", True)]
+        still = [r for r in results if r.get("moving") is False]
         flagged = [r for r in results if not r["ok"] and r["issue"]]
         if still:                          # 有人完全没在动:最优先,先邀请一起动
             target = next((r for r in still if r["name"] not in self.featured),
@@ -500,6 +542,10 @@ class Director:
             obs = [{"name": target["name"],
                     "advice": sec["issues"][target["issue"]]}]
         else:                              # 全达标/拿不准:表扬或打气
+            detected = {n: r for n, r in detected.items() if r.get("ok") is True}
+            if not detected:
+                self.history.append((section_key, results, []))
+                return []
             name = star if star in detected and star not in self.featured \
                 else None
             if name is None:               # 主角缺席/已点过:挑没点过名的
@@ -517,32 +563,43 @@ class Director:
         # 防止连播多句压到紧跟的结尾感谢语)
         if section_key == LAST_EVAL:
             for n in rules.NAMES:
-                if n not in self.featured and n in detected:
+                if n not in self.featured and n in detected and detected[n].get("ok") is True:
                     obs.append({"name": n,
                                 "advice": random.choice(rules.PRAISES)})
                     self.featured.add(n)
                     break
         self.history.append((section_key, results, obs))
-        if section_key == LAST_EVAL:
-            self._write_report(sorted(detected))
         return obs
 
     def _write_report(self, participants: list) -> None:
-        """⑤评完:存一份本场记录,并给语音侧留班后汇报数据。"""
+        """Persist the observations collected so far; completion is not inferred."""
+        self.small = {r["name"] for _, results, _ in self.history for r in results
+                      if (r.get("ok") is False and r.get("issue"))
+                      or r.get("moving") is False or r.get("energy") == "low"}
         record = {
+            "schema_version": 3,
+            "session_id": self.session_id,
+            "started_at": self.started_at,
+            "nicknames": self.nicknames,
+            "still_threshold": STILL_DIFF,
+            "models": {"judge": VLM_MODEL, "preview": PREVIEW_MODEL},
             "date": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "participants": participants,          # 最后一节仍在场的人
+            "participants": participants,          # 本场识别到的人，不推断全程参与
             "small_movement": sorted(self.small),  # 全场动作偏小的人
             "sections": [
-                {"section": s, "results": r, "spoken": o}
+                {"section": s, "results": r, "planned_feedback": o,
+                 **self.audit.get(s, {})}
                 for s, r, o in self.history],
         }
         RECORDS_DIR.mkdir(exist_ok=True)
-        rec_file = RECORDS_DIR / f"taiso_{time.strftime('%Y%m%d_%H%M%S')}.json"
-        rec_file.write_text(
+        rec_file = RECORDS_DIR / f"taiso_{self.session_id}.json"
+        rec_tmp = rec_file.with_suffix(".tmp")
+        rec_tmp.write_text(
             json.dumps(record, ensure_ascii=False, indent=2), "utf-8")
+        os.replace(rec_tmp, rec_file)
         tmp = REPORT_PATH.with_suffix(".rtmp")
         tmp.write_text(json.dumps({
+            "session_id": self.session_id,
             "participants": participants,
             "small": sorted(self.small & set(participants)),
             "record_file": rec_file.name,
@@ -552,13 +609,39 @@ class Director:
               f"动作偏小:{sorted(self.small)}")
 
 
-def write_obs(section_key: str, seq: int, observations: list) -> None:
+def write_obs(section_key: str, seq: int, observations: list, session_id=None) -> None:
     tmp = OBS_PATH.with_suffix(".tmp")
     tmp.write_text(json.dumps({
-        "section": section_key, "seq": seq, "wall": time.time(),
+        "session_id": session_id, "section": section_key, "seq": seq, "wall": time.time(),
+        "observation_id": f"{session_id}:{seq}",
         "observations": observations}, ensure_ascii=False), "utf-8")
     os.replace(tmp, OBS_PATH)
     print(f"[obs] {section_key} -> {observations}")
+
+
+def archive_affect_sample(owner, section, captured_at, people, frame=None, error=None):
+    """Keep capture-time identity/section even when an inference finishes in a later session."""
+    sample_id = uuid.uuid4().hex
+    evidence = []
+    if frame is not None:
+        folder = RECORDS_DIR / "evidence"
+        folder.mkdir(parents=True, exist_ok=True)
+        filename = f"{owner.session_id}_{time.time_ns()}_0.jpg"
+        if cv2.imwrite(str(folder / filename), frame):
+            evidence.append(filename)
+    people = [dict(p) for p in people or []]
+    names = [p.get("name") for p in people]
+    for p in people:
+        if p.get("name") not in owner.names or names.count(p.get("name")) > 1:
+            p["name"] = "?"
+        affect = p.get("affect", "?")
+        p["affect"] = affect if affect in PGC_AFFECTS else "?"
+        p["mood"] = PGC_AFFECTS[affect][0] if affect in PGC_AFFECTS else "?"
+    return append_event(owner.session_id, "affect", {
+        "sample_id": sample_id, "observation_id": f"{owner.session_id}:affect:{sample_id}",
+        "section": section, "captured_at": captured_at, "model": PREVIEW_MODEL,
+        "status": error or ("recognized" if people else "no_people"),
+        "people": people, "evidence": evidence}, directory=RECORDS_DIR)
 
 
 # ---------------- 主循环 ----------------
@@ -585,6 +668,8 @@ def main() -> int:
     seq = 0
     cur_section = None
     keyframes: list = []
+    capture_times: list = []
+    session_lock = threading.RLock()
     kf_idx = 0
     judging = False
     status = "開始待ち…"
@@ -598,41 +683,92 @@ def main() -> int:
         events.append({"t": time.time(), "kind": kind, "text": text})
         del events[:-80]
 
-    def judge_async(section_key, frames, my_seq):
+    def judge_async(section_key, frames, my_seq, timestamps, owner):
         nonlocal judging
-        results = vlm_judge(section_key, frames)
-        if my_seq != seq:      # 已有更新的评判发起:旧结果作废,不覆盖不污染
-            print(f"[vlm] {section_key} 结果迟到(seq{my_seq}<{seq}),丢弃")
-            log_event("warn", f"{section_key} の判定が遅延したため破棄")
-            return
-        still = [r["name"] for r in results if not r.get("moving", True)]
-        if still:
+        try:
+            if len(frames) < len(rules.SECTIONS[section_key]["keyframe_beats"]):
+                results, error = [], "insufficient_frames"
+            else:
+                results = vlm_judge(section_key, frames)
+                error = None if results is not None else "recognition_failed"
+        except Exception as exc:
+            results, error = [], type(exc).__name__
+        with session_lock:
+            if my_seq != seq or owner is not director:
+                return
+            observation_id = f"{owner.session_id}:{my_seq}"
+            evidence = []
+            evidence_dir = RECORDS_DIR / "evidence"
+            evidence_dir.mkdir(parents=True, exist_ok=True)
+            for i, frame in enumerate(frames):
+                filename = f"{owner.session_id}_{my_seq}_{i}.jpg"
+                if cv2.imwrite(str(evidence_dir / filename), frame):
+                    evidence.append(filename)
+            owner.audit[section_key] = {
+                "observation_id": observation_id, "captured_at": timestamps,
+                "evidence": evidence,
+                "judged_at": time.strftime("%H:%M:%S"),
+                "status": error or ("recognized" if results else "no_identified_people")}
+            owner.history = [entry for entry in owner.history if entry[0] != section_key]
+            obs = owner.decide(section_key, results or [])
+            for i, feedback in enumerate(obs):
+                target = next((r for r in results or [] if r["name"] == feedback["name"]), {})
+                feedback.update(feedback_id=f"{observation_id}:{i}",
+                                kind="still" if target.get("moving") is False else
+                                "issue" if target.get("issue") else
+                                "encourage" if target.get("energy") == "low" else "praise")
+            owner._write_report(sorted({r["name"] for _, rs, _ in owner.history for r in rs}))
+            still = [r["name"] for r in results or [] if r.get("moving") is False]
             alert.update(names=still, wall=time.time())
-            print(f"[vlm] {section_key} 没在动: {still}")
-            log_event("alert", f"{','.join(still)} が動いていません")
-        obs = director.decide(section_key, results)
-        last_judge.update(section=section_key, results=results, obs=obs,
-                          wall=time.time())
-        log_event("judge", f"{section_key} 判定: " + (", ".join(
-            f"{r['name']}={'OK' if r['ok'] else r['issue']}" for r in results)
-            or "人物なし"))
-        for o in obs:
-            log_event("speak", f"{o.get('name', '')}さん、{o.get('advice', '')}")
-        write_obs(section_key, my_seq, obs)
-        judging = False
+            last_judge.clear()
+            last_judge.update(section=section_key, results=results or [], obs=obs,
+                              wall=time.time(), observation_id=observation_id,
+                              session_id=owner.session_id, captured_at=timestamps,
+                              status=owner.audit[section_key]["status"])
+            log_event("warn" if error else "judge", f"{section_key}: {owner.audit[section_key]['status']}")
+            for o in obs:
+                log_event("info", f"[予定 / planned] {o.get('name', '')}さん、{o.get('advice', '')}")
+            write_obs(section_key, my_seq, obs, owner.session_id)
+            judging = False
 
     affect_log: list = []                # 每次认出 A/B 且看清表情就记一条(网页表情日志)
+    affect_counts = {}
 
-    def preview_async(frame):
-        people = vlm_locate(frame)
-        now = time.time()
+    def preview_async(frame, captured_at, owner, section, in_session):
+        try:
+            people = vlm_locate(frame)
+            error = "recognition_failed" if people is None else None
+        except Exception as exc:
+            error = type(exc).__name__
+            people = []
+        people = people or []
+        sample = None
+        if in_session:
+            try:
+                sample = archive_affect_sample(owner, section, captured_at, people, frame, error)
+                people = sample["people"]
+            except Exception as exc:
+                log_event("warn", f"表情記録の保存失敗: {exc}")
+        if owner is not director:
+            preview.update(busy=False)
+            return
+        # Duplicate labels cannot identify a unique person.
+        names = [p["name"] for p in people]
         for p in people:
-            if p["name"] in rules.NAMES and p.get("affect") in PGC_AFFECTS:
-                affect_log.append({"t": now, "name": p["name"],
+            if names.count(p["name"]) > 1:
+                p["name"] = "?"
+        for p in people:
+            if in_session and sample and p["name"] in rules.NAMES:
+                counts = affect_counts.setdefault(p["name"], {"pos": 0, "neg": 0, "unknown": 0})
+                counts["pos" if p["mood"] == "积极" else "neg" if p["mood"] == "消极" else "unknown"] += 1
+                affect_log.append({"t": captured_at, "name": p["name"],
                                    "affect": p["affect"], "mood": p["mood"],
-                                   "action": p.get("action", "")})
+                                   "action": p.get("action", ""),
+                                   "session_id": owner.session_id if in_session else None,
+                                   "section": section,
+                                   "sample_id": sample["sample_id"] if sample else None})
         del affect_log[:-500]
-        preview.update(people=people, wall=now, busy=False)
+        preview.update(people=people, wall=captured_at, busy=False, frame=frame)
 
     print(f"[run] 模型={VLM_MODEL} 评判节={list(rules.SECTIONS)}")
     win = "vision_coach (q quit)"
@@ -645,30 +781,38 @@ def main() -> int:
     web_frame = None
     if args.web:
         import vision_web
+        speech_cache = {"session_id": None, "at": 0.0, "events": []}
 
         def web_state() -> dict:
             now = time.time()
-            fresh = now - preview["wall"] < 4 * PREVIEW_INTERVAL
+            if speech_cache["session_id"] != director.session_id or now - speech_cache["at"] > 1:
+                try:
+                    receipts = [e for e in read_events(director.session_id, RECORDS_DIR)
+                                if e["event_type"] == "speech"]
+                    speech_cache.update(session_id=director.session_id, at=now, events=receipts[-80:])
+                except (OSError, ValueError) as exc:
+                    log_event("warn", f"音声記録を読み込めません: {exc}")
+            fresh = not clock.active and now - preview["wall"] < 4 * PREVIEW_INTERVAL
             return {
                 "now": now,
                 "status": status,
                 "clock_active": clock.active,
                 "section": live["key"],
                 "beat": live["beat"],
-                "camera_ok": now - live["frame_wall"] < 2.0,
+                "camera_ok": now - grabber.captured_at < 2.0,
+                "session_id": director.session_id,
+                "frame_mode": "snapshot" if fresh and preview.get("frame") is not None else "live",
+                "frame_captured_at": preview["wall"] if fresh else grabber.captured_at,
                 "judging": judging,
                 "people": preview["people"] if fresh else [],
                 "people_age": now - preview["wall"] if preview["wall"] else None,
                 "alert": alert["names"] if now - alert["wall"] < ALERT_SECONDS else [],
                 "last_judge": last_judge,
                 "events": events[-40:],
+                "speech_events": speech_cache["events"],
                 "affect_log": affect_log[-150:],
-                "affect_stats": {
-                    n: {"pos": sum(1 for e in affect_log
-                                   if e["name"] == n and e["mood"] == "积极"),
-                        "neg": sum(1 for e in affect_log
-                                   if e["name"] == n and e["mood"] == "消极")}
-                    for n in rules.NAMES},
+                "affect_stats": {n: dict(affect_counts.get(n, {"pos": 0, "neg": 0, "unknown": 0}))
+                                 for n in rules.NAMES},
                 "names": list(rules.NAMES),
                 "nicknames": dict(rules.NICKNAMES),
                 "added_at": dict(rules.ADDED_AT),
@@ -683,6 +827,8 @@ def main() -> int:
             }
 
         def set_participants(opts: dict) -> dict:
+            if clock.active or judging:
+                raise ValueError("演出或评判进行中，不能修改参与者名单")
             before = list(rules.NAMES)
             rules.set_participants(opts.get("participants") or [])
             print(f"[web] 参与者更新: {before} -> {rules.NAMES}")
@@ -698,46 +844,73 @@ def main() -> int:
         log_event("info", "コンソール起動")
     while True:
         key, beat = clock.now()
+        with session_lock:
+            if clock.active and clock.session_id and clock.session_id != director.session_id:
+                seq += 1
+                director = Director(clock.session_id)
+                director._write_report([])
+                cur_section = None
+                keyframes, capture_times, kf_idx = [], [], 0
+                last_judge.clear()
+                affect_log.clear()
+                affect_counts.clear()
+                preview.update(people=[], wall=0.0, frame=None)
+                alert.update(names=[], wall=0.0)
+                judging = False
+                log_event("info", "Session: " + director.session_id)
         live.update(key=key, beat=beat)
         if key != cur_section:
             cur_section = key
-            keyframes, kf_idx = [], 0
+            keyframes, capture_times, kf_idx = [], [], 0
             if key:
                 log_event("section", f"{key} 開始")
         if key in rules.SECTIONS and beat is not None:
             beats = rules.SECTIONS[key]["keyframe_beats"]
             if kf_idx < len(beats) and beat >= beats[kf_idx]:
-                frame = grabber.latest()
-                if frame is not None:
+                frame, captured_at = grabber.sample()
+                if frame is not None and captured_at not in capture_times:
                     keyframes.append(frame)
+                    capture_times.append(captured_at)
                 kf_idx += 1
                 status = f"{key} {beat:.1f}拍 撮影{len(keyframes)}/{len(beats)}"
-                if kf_idx == len(beats) and keyframes:
+                if kf_idx == len(beats):
                     judging = True         # 不做互斥:新评判直接发起,旧的作废
                     seq += 1
                     threading.Thread(
-                        target=judge_async, args=(key, list(keyframes), seq),
+                        target=judge_async, args=(key, list(keyframes), seq, list(capture_times), director),
                         daemon=True).start()
                     status = f"{key} 判定中…"
         elif key is None:
             status = "開始待ち…" if not args.standalone else "待機中"
 
+        # Session sampling also runs without --web/--show; judgments take priority.
+        now = time.time()
+        if (clock.active or render) and not judging and not preview["busy"] and \
+                now - preview["last_try"] > PREVIEW_INTERVAL:
+            frame, captured_at = grabber.sample()
+            preview["last_try"] = now
+            if frame is not None:
+                preview.update(busy=True)
+                threading.Thread(target=preview_async,
+                                 args=(frame, captured_at, director, key, clock.active),
+                                 daemon=True).start()
+            elif clock.active:
+                try:
+                    archive_affect_sample(director, key, now, [], error="camera_unavailable")
+                except Exception as exc:
+                    log_event("warn", f"表情記録の保存失敗: {exc}")
         if render:
-            # 空闲时定期刷新"识别到谁"的标注;演出进行中完全暂停(不抢带宽)
-            now = time.time()
-            if not clock.active and not preview["busy"] and \
-                    now - preview["last_try"] > PREVIEW_INTERVAL:
-                frame = grabber.latest()
-                if frame is not None:
-                    preview.update(busy=True, last_try=now)
-                    threading.Thread(target=preview_async, args=(frame,),
-                                     daemon=True).start()
             img = grabber.latest()
             if img is not None:
-                live["frame_wall"] = now
+                live["frame_wall"] = grabber.captured_at
+                snapshot = dict(preview)
+                annotated = (not clock.active and snapshot.get("frame") is not None
+                             and now - snapshot["wall"] < 4 * PREVIEW_INTERVAL)
+                if annotated:
+                    img = snapshot["frame"]
                 disp = cv2.resize(img, (960, 540))
-                if now - preview["wall"] < 4 * PREVIEW_INTERVAL:
-                    for p in preview["people"]:
+                if annotated:
+                    for p in snapshot["people"]:
                         _draw_person(disp, p)
                 if web_frame is not None:
                     # 网页:画面只带人物框/emoji,状态和提示由页面本身显示

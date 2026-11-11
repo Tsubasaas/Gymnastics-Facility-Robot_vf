@@ -51,6 +51,7 @@ class RobotSpeaker:
         self._client = AudioClient()
         self._client.SetTimeout(10.0)
         self._client.Init()
+        self._stop_generation = 0
         if volume is None:
             volume = os.environ.get("G1_SPEAKER_VOLUME")   # 0~100，可选
         if volume is not None:
@@ -64,9 +65,12 @@ class RobotSpeaker:
             if f.read(4) != b"RIFF":
                 raise ValueError("非wav格式，机器人端无法解码")
         pcm, duration = wav_to_pcm16k(path)
+        generation = self._stop_generation
         stream_id = uuid.uuid4().hex[:12]
         t0 = time.monotonic()
         for i in range(0, len(pcm), CHUNK_BYTES):
+            if self._stop_generation != generation:
+                return {"status": "interrupted", "stream_id": stream_id}
             ret = self._client.PlayStream(APP_NAME, stream_id,
                                           pcm[i:i + CHUNK_BYTES])
             code = ret[0] if isinstance(ret, tuple) else ret
@@ -76,9 +80,13 @@ class RobotSpeaker:
         remain = duration - (time.monotonic() - t0)
         if remain > 0:
             time.sleep(remain)
+        return {"status": "interrupted" if self._stop_generation != generation else "robot_sent",
+                "stream_id": stream_id, "duration_s": duration,
+                "confirmation": "rpc_accepted_duration_waited", "completion_confirmed": False}
 
     def stop(self):
         """立即停止机器人端当前播放（急停语音时用）。"""
+        self._stop_generation += 1
         try:
             self._client.PlayStop(APP_NAME)
         except Exception:
