@@ -21,16 +21,42 @@ This project connects motion choreography, MuJoCo previews, Qwen motion generati
 
 Changing the README language changes the documentation only. The current demonstration dialogue remains Japanese.
 
-## 1. What can it do?
+## 1. Background: why develop this project?
 
-| Feature | What you see or hear | Requirements |
+**This humanoid-robot-assisted exercise project aims to reduce the workload of nursing-home caregivers.** By assisting with repetitive exercise guidance and record keeping, we hope to leave caregivers more time for residents’ individual needs, on-site care and personal interaction.
+
+During group exercise in a nursing home, caregivers must demonstrate movements, give verbal instructions, observe participation and prepare records afterwards. With several residents taking part, these tasks overlap: it is difficult to lead the exercises while continuously watching everyone, and scattered observations still need to be organized after the session.
+
+We are exploring how G1 can support this workflow through repeatable movement demonstrations and Japanese voice prompts, camera samples of movements and expressions, and traceable session reports. The project provides demonstration, observation and recording tools for nursing-home exercise and care activities; actual workload reduction still requires evaluation in real use.
+
+Development focuses on three questions:
+
+- **How can movements be prepared reliably?** Preview and inspect them on a computer, then validate them gradually on the robot at low speed.
+- **How can feedback be traced to evidence?** Link participant labels, captured images, judgments and spoken feedback to the same session, retaining uncertain results.
+- **How can records be reviewed easily?** Organize observations and speech processing into web reports and exportable data for staff review.
+
+The robot is an assistant. Staff remain responsible for activity organization, on-site safety and care decisions. This is a working engineering prototype, not evidence of improved health outcomes or a substitute for professional assessment.
+
+## 2. What can it do?
+
+**Exercise demonstration → movement and expression observation → activity reports.**
+
+The workflow combines **MuJoCo × Unitree SDK2 × Qwen3-VL × Python**, **Japanese speech through Qwen TTS**, and observation categories inspired by **PGC-ARS**.
+
+| Stage | Technology and processing | Implemented functions and purpose |
 | --- | --- | --- |
-| Offline motion preview | A G1 model plays presets with pause, replay, motion selection, and speed controls | Computer, MuJoCo, G1 model |
-| Calisthenics demonstration | A wave and hand-to-chest greeting, followed by stretching, arm swings, arm circles, chest opening, and side bends | `demo_viewer.py`; no API key |
-| Japanese voice coaching | Opening greeting, instructions for each section, and closing remarks; console captions when speech is not configured | `demo_voice.py`; cloud API for speech |
-| Camera interaction | Identifies participants by A/B/C chest labels or agreed positions, gives short Japanese feedback, and records session results | Camera, vision-model API, demonstration clock |
-| Natural-language choreography | Text such as “slowly raise your right hand, then lower it” becomes joint waypoints for preview or validation | `ai_viewer.py` / `ai_robot.py`, motion-generation API |
-| Physical G1 coaching | Executes upper-body and explicitly enabled waist motions after operator confirmation; optional G1 speaker output | SDK-capable G1 EDU, network, on-site commissioning |
+| **01 Exercise demonstration and voice guidance** | **Simulation preview → physical execution**: inspect movements in MuJoCo, drive G1 through Unitree SDK2, and provide Japanese speech with Qwen TTS. | Combine demonstrations with greetings, section prompts and closing remarks to support staff-led exercise. The sequence includes a wave and hand-to-chest greeting, then stretching, arm swings, arm circles, chest opening and side bends. |
+| **02 Movement and expression observation** | **OpenCV × Qwen3-VL**: sample camera images, identify participants by readable chest letters, and apply movement rules and image motion scores; expression categories reference PGC-ARS. | Show images, judgments and expression samples in the console, and provide brief Japanese prompts for selected movement issues or low activity. Preserve uncertainty rather than guessing identity from position. |
+| **03 Activity reports** | **JSON × Python**: save and aggregate session records, linking judgments, captured images, expression events and Qwen TTS speech receipts into a web report. | Review observations, expression distributions and speech states by participant and section; trace the associated evidence and print to PDF or export CSV / JSON for record keeping and sharing. |
+
+### Future extensions (not implemented)
+
+- **Wearable integration**: explore displaying physiological data from compatible devices alongside activity records to help staff understand changes. Blood pressure, temperature and similar data are not currently connected.
+- **Medical or care database integration**: explore authorized links between activity records and existing care information for professional review. These database interfaces are not implemented.
+
+Movement and expression observation is not vital-sign monitoring and cannot establish health status or early disease detection. The code organizes model outputs using six PGC-ARS-inspired categories; it is not a formal administration of the scale. Speech receipts do not confirm that participants heard the audio. Automatic spoken narration of the complete activity report is not implemented.
+
+Start with the offline `demo_viewer.py`, which needs no API key. Speech and vision require their cloud APIs; physical operation also requires an SDK-capable G1 EDU and on-site commissioning. Natural-language motion generation is available through `ai_viewer.py` / `ai_robot.py`.
 
 **The current demonstration adapts five sections of Radio Taiso No. 1; it is not a full-body reproduction of all thirteen sections.** Motions are adapted to G1 joint and speed limits. This project does not control walking or reproduce the leg exercises. Other basic motions and longer sequences exist in the repository; their preset numbers differ from the demonstration entry point.
 
@@ -44,7 +70,23 @@ This existing basic-motion preview is not a recording of the complete current fi
 
 More animations: [preview](preview/). Video: [group gymnastics.mp4](group%20gymnastics.mp4).
 
-## 2. Technology stack and workflow
+
+#### Vision console (demonstration only)
+
+The existing console is shown with fictional participants, illustrated detection boxes, movement judgments and expression logs. **This is sample data, not camera footage or actual AI inference.** No camera, cloud model or robot is connected; robot launch is disabled.
+
+![English vision console demonstration](preview/console_vision_demo.jpg)
+
+#### Session report (four-person sample)
+
+The built-in sample shows expression charts, movement judgments, motion scores, participant summaries and spoken feedback. **All participants and values are fictional.** Completion indicators do not mean actual records can verify full-session participation; sample judgments are not field-validation results. Spoken messages retain their original Japanese text.
+
+![English session report with sample data](preview/report_demo_en.jpg)
+
+To reproduce, run `python preview_console_demo.py` and open `http://127.0.0.1:8082/?lang=en` for the console or `http://127.0.0.1:8082/report?mode=sample&lang=en` for the report. Use the regular console or `preview_console.py` to view actual records.
+
+
+## 3. Technology stack and workflow
 
 | Layer | Implementation | Files |
 | --- | --- | --- |
@@ -52,7 +94,7 @@ More animations: [preview](preview/). Video: [group gymnastics.mp4](group%20gymn
 | Motion data | Joint-angle waypoints, linear interpolation, beat-based choreography, execution speed limiting | `motions.py`, `demo_viewer.py`, `real_robot.py` |
 | 3D preview | MuJoCo and the Unitree G1 model from Google DeepMind MuJoCo Menagerie | `sim_viewer.py`, `ai_viewer.py` |
 | Motion generation | OpenAI Python SDK with the DashScope international compatible endpoint; default `qwen3-max` | `llm_motion.py` |
-| Visual feedback | OpenCV / NumPy sampling, DashScope SDK; default `qwen3-vl-plus`, preview localization via `qwen3-vl-flash` | `vision_coach.py`, `vision_rules.py` |
+| Visual feedback | OpenCV / NumPy sampling, DashScope SDK; default `qwen3-vl-plus`, preview localization via `qwen3.7-flash` | `vision_coach.py`, `vision_rules.py` |
 | Speech | Default `qwen3-tts-flash`, `Cherry` voice, Japanese; asynchronous queue and audio cache | `tts_qwen.py`, `demo_voice.py` |
 | Robot communication | Unitree SDK2 Python and CycloneDDS 0.10.2; reads `rt/lowstate`, publishes `rt/arm_sdk` | `real_robot.py` |
 | Camera transport | Local OpenCV, or Paramiko SSH to start PC2 capture followed by JPEG over TCP; separate DDS RPC entry for the head camera | `robot_camera.py`, `brio_sender.py` |
@@ -65,9 +107,22 @@ Interaction: **Demonstration clock → camera keyframes → vision model and fee
 
 Model names are code defaults; availability depends on your DashScope international account permissions. Cloud features transmit text or sampled camera images and may incur API charges. Obtain participants’ consent before recording them.
 
-## 3. First run: preview on your computer
+## 4. How to run: computer and robot operations
 
-### 3.1 Get the project and create a preview environment
+Follow this order: offline preview → speech/camera rehearsal → robot power-on and remote preparation → computer connection and read-only check → low-speed probe → individual sections and full demonstration. For a first look, complete 4.1 only; no robot is needed.
+
+| Stage | Where | Instructions |
+| --- | --- | --- |
+| Offline preview | Computer | 4.1: project, environment, model and playback |
+| Interactive rehearsal | Computer and camera | 4.2: API, speech and camera |
+| Robot preparation | Robot and remote | 4.3.1: fall protection, power-on and mode selection |
+| Physical operation | Computer connected to robot | 4.3.2–4.3.6: environment, network, read-only check, probe and demonstration |
+| Shutdown | Computer, robot and remote | Shutdown steps in 4.3.1: exit programs, support, damping and power-off |
+| Reports and troubleshooting | Computer | 4.4: console, reports and configuration; 4.5: troubleshooting |
+
+### 4.1 Computer: offline motion preview
+
+#### 4.1.1 Get the project and create a preview environment
 
 Install Git and Python 3.10. If the repository is private, authenticate Git with a GitHub account that has access.
 
@@ -83,7 +138,7 @@ py -3.10 -m venv .venv
 
 The preview environment `.venv` is separate from the robot environment `.venv-real`. Both directories are excluded by `.gitignore`.
 
-### 3.2 Download the G1 model
+#### 4.1.2 Download the G1 model
 
 ```powershell
 git clone --depth 1 https://github.com/google-deepmind/mujoco_menagerie.git
@@ -92,7 +147,7 @@ Test-Path .\mujoco_menagerie\unitree_g1\scene.xml
 
 The last command should return `True`. This relative path is the code default. If you store the model elsewhere, change `MODEL_PATH` in `sim_viewer.py`. For a ZIP download, preserve the meshes and other resources referenced by the model XML; copying only `scene.xml` is insufficient.
 
-### 3.3 Play the five-section demonstration
+#### 4.1.3 Play the five-section demonstration
 
 ```powershell
 $env:PYTHONUTF8 = '1'
@@ -115,9 +170,9 @@ $env:DEMO_PAUSED = '1'
 
 For the basic motion collection, run `.\.venv\Scripts\python.exe sim_viewer.py`. Its numbering differs; follow the terminal output. Once dependencies and models are installed, both previews work without internet access or an API key.
 
-## 4. Add Japanese speech, AI, and visual interaction
+### 4.2 Computer: speech, AI and camera rehearsal
 
-### 4.1 Configure the API key
+#### 4.2.1 Configure the API key
 
 The project uses DashScope **international** endpoints. Set the environment variable in the PowerShell window used to launch the program; do not put keys in source files.
 
@@ -128,7 +183,7 @@ $env:DASHSCOPE_API_KEY = $apiCredential.GetNetworkCredential().Password
 
 Child processes inherit the variable. Set it again in independently opened terminals. The program does not automatically load `.env` files.
 
-### 4.2 Start the narrated demonstration or natural-language preview
+#### 4.2.2 Start the narrated demonstration or natural-language preview
 
 ```powershell
 # Five sections with Japanese speech; captions remain available without speech setup
@@ -140,7 +195,7 @@ Child processes inherit the variable. Set it again in independently opened termi
 
 Enter natural-language instructions in the terminal for `ai_viewer.py`. Start with slow, small, single-arm motions and inspect generated results before considering physical execution.
 
-### 4.3 Use a laptop camera
+#### 4.2.3 Use a laptop camera
 
 Open two PowerShell windows, enter the same project root, and configure the API key in both.
 
@@ -163,7 +218,7 @@ Participants should wear clearly visible A/B labels and take their agreed positi
 
 Feedback is not guaranteed for every section if no person is recognized, results arrive late, or speech is busy. Change `--cam 0` to the correct camera index if needed.
 
-### 4.4 Use the external Brio camera attached to G1
+#### 4.2.4 Use the external Brio camera attached to G1
 
 After completing the robot environment and network setup below, set the device password in the same window that launches the camera:
 
@@ -177,9 +232,9 @@ Defaults are PC2 `192.168.123.164` and user `unitree`. If your setup differs, ed
 
 After a successful frame capture, run `.\.venv-real\Scripts\python.exe vision_coach.py --show`. A missing `PC2_PASS` causes an error before SSH login. The head camera can be tested separately with `robot_camera.py --source head --probe`; the vision coach’s default remains the external Brio.
 
-## 5. Start the physical G1 workflow
+### 4.3 Robot preparation and computer commissioning
 
-### 5.1 Power-on and on-site preparation
+#### 4.3.1 Power-on and on-site preparation
 
 This project targets **SDK-capable G1 EDU robots**. Confirm the actual 23 / 29 DOF configuration and waist hardware. The full demonstration uses waist pitch and roll; “29 DOF” alone does not establish compatibility with the hardware and current control mode.
 
@@ -190,7 +245,28 @@ This project targets **SDK-capable G1 EDU robots**. Confirm the actual 23 / 29 D
 
 Consult the [official Unitree G1 developer documentation](https://support.unitree.com/home/zh/G1_developer) for hardware operations and the [official Unitree SDK2 Python repository](https://github.com/unitreerobotics/unitree_sdk2_python) for SDK setup. This guide covers this project’s software startup; it does not replace the hardware-specific power-on and mode instructions.
 
-### 5.2 Create a separate robot environment
+##### Power-on and remote operations before running the robot program
+
+These steps combine on-site notes with the [official Unitree motion-control instructions](https://github.com/unitreerobotics/xr_teleoperate/wiki/Motion). Confirm the unit's firmware uses this button mapping; older mappings must not be mixed. Verify each state before proceeding.
+
+| Step | Operation | Confirmation |
+| --- | --- | --- |
+| 1. Power on | **Short-press the power switch once, then long-press** | Fit fall protection first. Check hold duration and indicators in the battery manual and wait for startup checks. |
+| 2. Damping | **L2 + B** | Damping does not maintain standing. Securely support the robot with a suitable frame or suspension before switching. |
+| 3. Locked standing | **L2 + ↑** (directional Up) | Follow the unit's manual for support and ground-contact posture; verify normal Locked Standing. |
+| 4. Regular motion control | **R1 + X** | Official instructions identify the one-DOF-waist regular mode. Verify stability and absence of faults before preparing upper-body control. |
+| 5. Software checks | Follow 4.3.2–4.3.4 and run `--read-only` | After fresh `lowstate`, perform the low-speed right-elbow probe in 4.3.5 before individual sections or the full demonstration. |
+
+**`R1 + X` does not authorize waist pitch/roll.** Separately confirm hardware, firmware and control-mode support and follow 4.3.6; do not simply add `--allow-waist-roll-pitch`. This project uses `arm_sdk`, not a whole-body low-level debug-mode startup procedure.
+
+##### End of demonstration and shutdown
+
+1. Finish normally, wait for `arm_sdk` weight release, enter `q`, and close vision/voice processes.
+2. Follow the unit's manual to establish secure support and a posture suitable for damping. **Do not enter damping while standing unsupported.**
+3. Press **L2 + B** to enter Damping and confirm the support carries the robot's weight.
+4. Follow the manual for shutdown posture and battery power-off. Confirm power is off before storage. **`L2 + B` is damping, not shutdown or power disconnection.** Use the battery's documented power-off operation rather than inferring it from power-on.
+
+#### 4.3.2 Create a separate robot environment
 
 ```powershell
 py -3.10 -m venv .venv-real
@@ -203,7 +279,7 @@ py -3.10 -m venv .venv-real
 
 If CycloneDDS cannot be found, follow the [official SDK installation instructions](https://github.com/unitreerobotics/unitree_sdk2_python#installation) to configure the native library and `CYCLONEDDS_HOME`. Do not arbitrarily change pinned versions to work around an installation error. Windows native dependencies may require additional setup.
 
-### 5.3 Configure the wired network
+#### 4.3.3 Configure the wired network
 
 These are the existing site addresses; confirm they match your setup:
 
@@ -220,7 +296,7 @@ ping 192.168.123.164
 
 Ping checks IP connectivity only. Receiving `lowstate` in the next step verifies the DDS link. For timeouts, check the selected adapter, firewall rules, and DDS networking.
 
-### 5.4 First connection: read state only
+#### 4.3.4 First connection: read state only
 
 This example assumes a confirmed 29 DOF robot. Adjust the argument for a 23 DOF robot.
 
@@ -231,9 +307,9 @@ This example assumes a confirmed 29 DOF robot. Adjust the argument for a 23 DOF 
 
 **Success:** the program reports fresh G1 `lowstate`, prints joint angles, modes, and temperatures, and confirms that no `rt/arm_sdk` publisher was created. This step needs no API key and sends no motion commands.
 
-### 5.5 First motion: a 5° right-elbow probe
+#### 4.3.5 First motion: a 5° right-elbow probe
 
-Configure `DASHSCOPE_API_KEY` in the current terminal as described in 4.1. **The current code initializes the AI client before the interactive loop, so even `probe` and preset inputs require a key and the OpenAI SDK.** Presets and the probe do not themselves request model-generated motion. Read-only mode is unaffected.
+Configure `DASHSCOPE_API_KEY` in the current terminal as described in 4.2.1. **The current code initializes the AI client before the interactive loop, so even `probe` and preset inputs require a key and the OpenAI SDK.** Presets and the probe do not themselves request model-generated motion. Read-only mode is unaffected.
 
 ```powershell
 .\.venv-real\Scripts\python.exe ai_robot.py `
@@ -251,7 +327,7 @@ Follow the terminal prompts:
 
 During motion, `Ctrl+C` triggers software interruption and control-weight release. **It is not a substitute for a physical emergency stop.** In a hazardous situation, the operator must use the established hardware emergency-stop procedure.
 
-### 5.6 Progress from individual sections to the full demonstration
+#### 4.3.6 Progress from individual sections to the full demonstration
 
 Start the demonstration entry point at low speed:
 
@@ -283,14 +359,30 @@ Motions using disabled waist joints are rejected by design. Add `--allow-waist-r
 
 Enter `p7` and the current confirmation code. `45°/s` is the demonstration entry point’s default and the maximum allowed by the code, not a recommended first-test speed. Lower limits extend motion duration; verify speech and vision timing on site. If G1 audio is unavailable, playback attempts to fall back to the computer.
 
-For visual interaction, start the vision process from 4.3 or 4.4 beforehand. The robot demonstration writes the same clock files. On completion, wait for control-weight release, enter `q`, close the vision process, and let the operator restore posture and power down according to the hardware manual.
+For visual interaction, start the vision process from 4.2.3 or 4.2.4 beforehand. The robot demonstration writes the same clock files. On completion, wait for control-weight release, enter `q`, close the vision process, and let the operator restore posture and power down according to the hardware manual.
 
-### 5.7 Existing batch launchers
+#### 4.3.7 Existing batch launchers
 
 - `开始彩排.bat`: vision uses `.venv-real`, while the narrated preview uses the current `python`. Prepare both environments, run `.\.venv\Scripts\Activate.ps1`, then launch the batch file from the terminal containing your environment variables so child processes inherit the key and password.
 - `真机演出.bat`: currently hardcodes 29 DOF and `192.168.123.222`, enables waist motion and the robot speaker, and uses the default `45°/s`. **Use the step-by-step commands above for initial commissioning, not this batch launcher.**
 
-## 6. Configuration and file guide
+### 4.4 Console, reports and configuration
+
+#### Console, actual reports and four-person sample
+
+Run `python vision_coach.py --web --cam 0` for a local camera; omit `--cam 0` for the robot's external camera. Restart the demonstration/voice processes together to use the same session-ID protocol. Before updating, finish the current show and exit vision, demonstration and speech processes; restart them from the same updated project directory. Do not mix old processes with new code. “Emergency stop instructions” opens help only and sends no stop command; use the physical emergency stop/remote on site.
+
+`/report` loads the most recently updated actual record; `/report?mode=sample` opens the four-person sample. Use `/report?id=taiso_<sessionID>.json` to select a session. Missing actual records never automatically fall back to sample data.
+
+Each new judgment records its session ID, observation ID, raw model entry, capture times, person box and motion score. Expand the report's evidence images to inspect the samples. Records and images stay in local `records/`, excluded from Git. Participants are identified only by clear chest letters; position is not used to guess identity. Duplicate letters and uncertain results are not automatically marked correct. Current code configures judgments for ③ arm circles, ④ chest opening and ⑤ side bends; fewer than three valid keyframes is recorded as insufficient sampling.
+
+Expression samples are archived with the session, section, participant, time and image at capture time; idle preview does not count toward session statistics. Unknown expressions are counted separately and excluded from the positive-rate denominator. Movement judgment has priority. Expression sampling normally runs every four seconds, even without the web/debug window, and adds corresponding API requests.
+
+Every utterance has a distinct ID; feedback also links the observation and feedback IDs. Receipts track queuing, synthesis, playback processing, failure, fallback, muted skips, stale-session cancellation and subtitle-only output. Repeated text still produces distinct utterances. Local `completed` means the blocking player returned normally. G1 `robot_sent` means PlayStream accepted the data and the expected duration elapsed; **it is not hardware-confirmed completion or proof that anyone heard the audio**. Actual G1 completion confirmation requires hardware-interface support. Full-session participation is not inferred, and missing legacy fields are not fabricated.
+
+Expression and audio events are written atomically under `records/events/<sessionID>/` to avoid concurrent overwrites. Actual reports merge these events into expression details and speech-state timelines; CSV/JSON exports retain association IDs. Annotated views use the original recognition snapshot with a timestamp; during a show, live images do not reuse old boxes.
+
+For UI work without a camera or robot, run `python preview_console.py` and open `http://[::1]:8081/`. It also reads local actual records and the four-person sample but cannot launch the robot. Offline association tests: `python -m unittest -v test_observation_records test_session_events` (camera, model and player are mocked).
 
 | Environment variable | Purpose / default |
 | --- | --- |
@@ -325,14 +417,14 @@ Do not increase tempo or motion amplitude merely to remove speed-limit messages.
 
 These checks do not drive the robot and do not replace on-site testing.
 
-## 7. Troubleshooting
+### 4.5 Troubleshooting
 
 | Problem | What to check |
 | --- | --- |
 | `scene.xml` not found | Start from the project root; check model directory layout and `MODEL_PATH` |
 | `py -3.10` unavailable | Install Python 3.10 or use its full executable path to create the environment |
 | Captions but no speech | Check the process’s key, DashScope dependency, international endpoint, and model permissions; local playback targets Windows |
-| Presets ask for an API key | The robot interactive entry initializes `MotionAgent`; configure 4.1 or use the offline viewer first |
+| Presets ask for an API key | The robot interactive entry initializes `MotionAgent`; configure 4.2.1 or use the offline viewer first |
 | Vision keeps waiting for the clock | Run `demo_voice.py` or `demo_robot.py` from the same directory and start the full demonstration |
 | External-camera login fails | Check `PC2_PASS`, address, user, SSH access, and PC2 OpenCV / camera permissions |
 | No `lowstate` | Check the computer adapter IP, DDS, firewall, and robot services; do not skip read-only verification |
