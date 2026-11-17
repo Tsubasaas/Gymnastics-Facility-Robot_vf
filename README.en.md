@@ -44,6 +44,22 @@ This existing basic-motion preview is not a recording of the complete current fi
 
 More animations: [preview](preview/). Video: [group gymnastics.mp4](group%20gymnastics.mp4).
 
+
+#### Vision console (demonstration only)
+
+The existing console is shown with fictional participants, illustrated detection boxes, movement judgments and expression logs. **This is sample data, not camera footage or actual AI inference.** No camera, cloud model or robot is connected; robot launch is disabled.
+
+![English vision console demonstration](preview/console_vision_demo.jpg)
+
+#### Session report (four-person sample)
+
+The built-in sample shows expression charts, movement judgments, motion scores, participant summaries and spoken feedback. **All participants and values are fictional.** Completion indicators and fifth-section judgments in this sample do not imply that those capabilities are verified in actual records. Spoken messages retain their original Japanese text.
+
+![English session report with sample data](preview/report_demo_en.jpg)
+
+To reproduce, run `python preview_console_demo.py` and open `http://127.0.0.1:8082/?lang=en` for the console or `http://127.0.0.1:8082/report?mode=sample&lang=en` for the report. Use the regular console or `preview_console.py` to view actual records.
+
+
 ## 2. Technology stack and workflow
 
 | Layer | Implementation | Files |

@@ -78,9 +78,17 @@ MuJoCo 查看器采用直接设置关节角度的**运动学回放**，可以检
 
 **这是演示示例：人物为示意图，识别框及所有判断均为虚构数据，不是摄像头实拍或视觉模型的实际识别结果。** 示例不连接摄像头、云端模型或机器人，机器人启动按钮禁用；表情统计仅用于展示界面，不代表真实测评。
 
-![Console 视觉识别演示示例：虚构人物、识别框、动作判断和表情日志](preview/console_vision_demo.jpg)
+![Console 视觉识别演示示例：虚构人物、识别框、动作判断和表情日志](preview/console_demo_zh.jpg)
 
-本地复现：运行 `python preview_console_demo.py`，打开 `http://127.0.0.1:8082/`。此入口仅展示固定的控制台示例；完整报告预览请使用 `preview_console.py`。
+本地复现：运行 `python preview_console_demo.py`，打开 `http://127.0.0.1:8082/?lang=zh`。语言参数支持 `zh`、`ja`、`en`。
+
+#### 活动报告（四人演示示例）
+
+下图为内置四人示例报告，展示表情统计、动作评判矩阵、运动量、参与者汇总和语音点评记录。**所有数值与人物均为示例，不是实际活动结果**；其中的完成情况和第五节评判也不代表当前真实记录已具备这些验证能力。播报内容保留日语原文。
+
+![中文活动报告：四人示例数据](preview/report_demo_zh.jpg)
+
+本地查看：运行 `python preview_console_demo.py`，打开 `http://127.0.0.1:8082/report?mode=sample&lang=zh`。真实记录仍通过常规控制台或 `preview_console.py` 查看。
 
 ## 3. 技术栈与工作流程
 
