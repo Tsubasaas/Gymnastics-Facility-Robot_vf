@@ -84,7 +84,7 @@ MuJoCo 查看器采用直接设置关节角度的**运动学回放**，可以检
 
 #### 活动报告（四人演示示例）
 
-下图为内置四人示例报告，展示表情统计、动作评判矩阵、运动量、参与者汇总和语音点评记录。**所有数值与人物均为示例，不是实际活动结果**；其中的完成情况和第五节评判也不代表当前真实记录已具备这些验证能力。播报内容保留日语原文。
+下图为内置四人示例报告，展示表情统计、动作评判矩阵、运动量、参与者汇总和语音点评记录。**所有数值与人物均为示例，不是实际活动结果**；其中的参与完成情况不代表真实记录能够确认全程参与，示例判断也不是现场验证结果。播报内容保留日语原文。
 
 ![中文活动报告：四人示例数据](preview/report_demo_zh.jpg)
 
@@ -98,7 +98,7 @@ MuJoCo 查看器采用直接设置关节角度的**运动学回放**，可以检
 | 动作数据 | 关节角度路点、线性插值、按节拍编排、执行前限速 | `motions.py`、`demo_viewer.py`、`real_robot.py` |
 | 三维预览 | MuJoCo + Google DeepMind MuJoCo Menagerie 的 Unitree G1 模型 | `sim_viewer.py`、`ai_viewer.py` |
 | 动作生成 | OpenAI Python SDK 调用 DashScope 国际版兼容接口；默认 `qwen3-max` | `llm_motion.py` |
-| 视觉反馈 | OpenCV / NumPy 采样；DashScope SDK；默认 `qwen3-vl-plus`，预览定位默认 `qwen3-vl-flash` | `vision_coach.py`、`vision_rules.py` |
+| 视觉反馈 | OpenCV / NumPy 采样；DashScope SDK；默认 `qwen3-vl-plus`，预览定位默认 `qwen3.7-flash` | `vision_coach.py`、`vision_rules.py` |
 | 语音 | 默认 `qwen3-tts-flash`、`Cherry` 音色、日语；异步队列和音频缓存 | `tts_qwen.py`、`demo_voice.py` |
 | 真机通信 | Unitree SDK2 Python + CycloneDDS 0.10.2；读取 `rt/lowstate`，发送 `rt/arm_sdk` | `real_robot.py` |
 | 摄像头链路 | 本机 OpenCV；或 Paramiko SSH 启动 PC2 采集端，再经 TCP 传送 JPEG；另有头部相机 DDS RPC 入口 | `robot_camera.py`、`brio_sender.py` |
@@ -384,7 +384,7 @@ Ping 仅检查 IP 连通性；DDS 是否可用以下一步收到 `lowstate` 为�
 新版记录为每次评判保存场次 ID、识别编号、原始模型条目、采样时间、人物框和运动分数。
 报告下方可展开对应采样图片。记录和图片保存在本机 `records/`，该目录不提交到 Git。
 人物只按清晰胸前字母识别，不再按站位猜测；重复字母和不确定结果不会自动认定达标。
-当前实际评判仍只有③绕臂、④扩胸；不足三张有效关键帧时记录为采样不足。
+当前代码配置的评判包含③绕臂、④扩胸、⑤体侧屈；不足三张有效关键帧时记录为采样不足。
 
 演出中的表情抽样会按拍摄时的场次、节次、人物、时间和图片存档；空闲预览不计入场次统计。
 不确定表情单独计数，不纳入积极率分母。动作评判优先，表情采样通常间隔四秒，
