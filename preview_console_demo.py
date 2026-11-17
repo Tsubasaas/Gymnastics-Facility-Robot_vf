@@ -17,12 +17,12 @@ STATE = {
     "preview_only": True, "now": SAMPLE_TIME, "clock_active": False,
     "camera_ok": True, "judging": False, "section": None, "beat": None,
     "people": PEOPLE, "people_age": 0, "alert": [],
-    "last_judge": {"section": "4_扩胸（示例）", "results": [
+    "last_judge": {"section": "4_Chest opener (sample)", "results": [
         {"name": "A", "ok": True, "moving": True},
         {"name": "B", "ok": False, "moving": True, "issue": "arms_low"},
         {"name": "C", "ok": None, "moving": None}]},
     "events": [{"t": SAMPLE_TIME, "kind": "info", "text":
-                "演示示例：人物、识别框、动作判断和表情均为虚构，未连接设备。"}],
+                "DEMO: Fictional participants, boxes, judgments and expressions. No devices connected."}],
     "speech_events": [], "affect_log": [
         {**p, "t": SAMPLE_TIME, "mood": "积极" if p["name"] != "C" else "未知"}
         for p in PEOPLE],
@@ -30,9 +30,9 @@ STATE = {
                      "C": {"pos": 0, "neg": 0, "unknown": 1}},
     "affects": {"兴趣": {"emoji": "👀", "mood": "积极", "ja": "興味"},
                 "愉悦": {"emoji": "😄", "mood": "积极", "ja": "喜び"}},
-    "names": ["A", "B", "C"], "nicknames": {n: "示例参与者 " + n for n in "ABC"},
+    "names": ["A", "B", "C"], "nicknames": {n: "Sample participant " + n for n in "ABC"},
     "added_at": {}, "max_participants": 8,
-    "models": {"judge": "示例数据", "preview": "示例数据"},
+    "models": {"judge": "Sample data", "preview": "Sample data"},
     "actions_ja": {}, "robot": {"running": False}, "sections": [],
 }
 
@@ -47,9 +47,9 @@ class DemoHandler(Handler):
         if path == "/":
             html = (ROOT / "vision_ui.html").read_text("utf-8")
             html = html.replace('src="/stream.mjpg"', 'src="/demo-frame.svg"')
-            html = html.replace("applyLang();\npoll();", 'lang = "zh"; applyLang();\npoll();')
-            html = html.replace("<body>", '<body><div style="padding:12px 24px;background:#fff2cd;color:#67480b;font-weight:700;text-align:center">演示示例 · 虚构人物 / 模拟识别数据 · 未连接摄像头、模型或机器人</div>')
-            html = html.replace("render(S);", 'render(S); $("dot-cam").className="dot"; document.querySelector(\'[data-i18n="chip_cam"]\').textContent="示例画面";')
+            html = html.replace("applyLang();\npoll();", 'lang = "en"; applyLang();\npoll();')
+            html = html.replace("<body>", '<body><div style="padding:12px 24px;background:#fff2cd;color:#67480b;font-weight:700;text-align:center">DEMONSTRATION ONLY · Fictional participants and sample results · No camera, AI model or robot connected</div>')
+            html = html.replace("render(S);", 'render(S); $("dot-cam").className="dot"; document.querySelector(\'[data-i18n="chip_cam"]\').textContent="Sample frame";')
             return self.respond(200, html.encode(), "text/html; charset=utf-8")
         return self.respond(404, b"Demo only", "text/plain")
 
