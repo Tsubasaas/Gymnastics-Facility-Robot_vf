@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""视觉互动教练(独立进程):看现场的人 → 判达标 → 写 observations.json。
+r"""视觉互动教练(独立进程):看现场的人 → 判达标 → 写 observations.json。
 
 链路:
   摄像头(默认外接Brio,经 robot_camera.ExternalSource)→ 按节采3个关键帧

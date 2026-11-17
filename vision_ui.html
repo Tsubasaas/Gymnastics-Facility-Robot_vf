@@ -421,7 +421,7 @@ main { gap: 22px; padding: 24px; }
   </div>
   <button class="estop" id="btn-estop" aria-haspopup="dialog">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M8 2h8l6 6v8l-6 6H8l-6-6V8z"/><path d="M8 12h8"/></svg>
-    <span data-i18n="estop">緊急停止</span>
+    <span data-i18n="estop">非常停止の操作説明</span>
   </button>
 </header>
 
@@ -559,10 +559,10 @@ main { gap: 22px; padding: 24px; }
   </form>
 </dialog>
 
-<!-- 紧急停止(UI,未接入) -->
+<!-- 急停操作说明：只打开帮助对话框，不发送控制命令。 -->
 <dialog id="dlg-stop" class="stop">
   <form method="dialog">
-    <div class="dlg-h">⛔ <span data-i18n="estop">緊急停止</span></div>
+    <div class="dlg-h">⛔ <span data-i18n="estop">非常停止の操作説明</span></div>
     <div class="dlg-b">
       <div class="stop-box"><strong data-i18n="stop_now">直ちに実機の非常停止ボタン/リモコンを使用してください。</strong>
         <span data-i18n="stop_not_wired">このボタンはまだロボット制御に接続されていません(UIのみ)。押してもロボットは止まりません。</span></div>
@@ -579,7 +579,7 @@ const I18N = {
   ja: {
     title: "体操コーチ コンソール", chip_server: "サーバー", chip_cam: "カメラ",
     show_idle: "演出 待機中", show_live: "演出中", robot_off: "演出プログラム 未起動",
-    robot_on: "演出プログラム 実行中", robot_exit: "演出プログラム 終了", estop: "停止ガイド",
+    robot_on: "演出プログラム 実行中", robot_exit: "演出プログラム 終了", estop: "非常停止の操作説明",
     no_video: "カメラ映像を待っています…", program: "プログラム", events: "イベントログ",
     events_sub: "判定・読み上げ・アラート", robot_card: "ロボット演出プログラム",
     speed: "速度上限", speed_test: "10°/s テスト", speed_show: "45°/s 本番",
@@ -616,7 +616,7 @@ const I18N = {
   zh: {
     title: "体操教练 控制台", chip_server: "服务器", chip_cam: "摄像头",
     show_idle: "演出 待机", show_live: "演出中", robot_off: "演出程序 未启动",
-    robot_on: "演出程序 运行中", robot_exit: "演出程序 已退出", estop: "停止说明",
+    robot_on: "演出程序 运行中", robot_exit: "演出程序 已退出", estop: "急停操作说明",
     no_video: "正在等待摄像头画面…", program: "节目进度", events: "事件日志",
     events_sub: "评判·语音·提醒", robot_card: "机器人演出程序",
     speed: "速度上限", speed_test: "10°/s 测试", speed_show: "45°/s 正式",
@@ -653,7 +653,7 @@ const I18N = {
   en: {
     title: "Taiso Coach Console", chip_server: "Server", chip_cam: "Camera",
     show_idle: "Show idle", show_live: "Show live", robot_off: "Robot program not running",
-    robot_on: "Robot program running", robot_exit: "Robot program exited", estop: "Stop guide",
+    robot_on: "Robot program running", robot_exit: "Robot program exited", estop: "Emergency stop instructions",
     no_video: "Waiting for camera feed…", program: "Program", events: "Event log",
     events_sub: "Judgments · speech · alerts", robot_card: "Robot show program",
     speed: "Speed limit", speed_test: "10°/s Test", speed_show: "45°/s Show",
