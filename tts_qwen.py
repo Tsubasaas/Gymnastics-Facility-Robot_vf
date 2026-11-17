@@ -18,6 +18,8 @@ import os
 import queue
 import tempfile
 import threading
+import time
+import uuid
 import urllib.request
 
 import dashscope
@@ -87,51 +89,92 @@ def _play_blocking(path):
     else:   # mp3 等其他格式走 MCI
         alias = f"g1tts{abs(hash(path)) % 100000}"
         mci = ctypes.windll.winmm.mciSendStringW
-        mci(f'open "{path}" alias {alias}', None, 0, None)
+        code = mci(f'open "{path}" alias {alias}', None, 0, None)
+        if code:
+            raise RuntimeError(f"MCI open failed: {code}")
         try:
-            mci(f"play {alias} wait", None, 0, None)
+            code = mci(f"play {alias} wait", None, 0, None)
+            if code:
+                raise RuntimeError(f"MCI playback failed: {code}")
         finally:
             mci(f"close {alias}", None, 0, None)
+
+
+def _emit(job, status, **details):
+    callback = job.get("on_event")
+    if callback:
+        try:
+            callback({**job["context"], **details, "utterance_id": job["id"],
+                      "text": job["text"], "status": status, "at": time.time()})
+        except Exception as exc:
+            print(f"[audio receipt write failed] {exc}")
+
+
+def _process(job):
+    current = job.get("is_current") or (lambda: True)
+    if not _enabled or not current():
+        _emit(job, "skipped", reason="muted" if not _enabled else "session_changed")
+        return
+    _emit(job, "synthesizing")
+    try:
+        path = synth(job["text"])
+    except Exception as exc:
+        _emit(job, "failed", stage="synthesis", error=str(exc))
+        return
+    if not _enabled or not current():
+        _emit(job, "skipped", reason="muted" if not _enabled else "session_changed")
+        return
+    sink = _robot_sink
+    if sink is not None:
+        _emit(job, "playing", output="robot")
+        try:
+            result = sink.play_file(path)
+            # PlayStream acknowledges transport, not physical playback completion.
+            details = result if isinstance(result, dict) else {}
+            _emit(job, details.pop("status", "robot_sent"), output="robot", **details)
+            return
+        except Exception as exc:
+            _emit(job, "fallback", output="robot", error=str(exc))
+    if not _enabled or not current():
+        _emit(job, "skipped", reason="muted" if not _enabled else "session_changed")
+        return
+    _emit(job, "playing", output="local")
+    try:
+        _play_blocking(path)
+        _emit(job, "completed", output="local", confirmation="blocking_player_returned")
+    except Exception as exc:
+        _emit(job, "failed", stage="playback", output="local", error=str(exc))
 
 
 def _run():
     global _playing
     while True:
-        text = _q.get()
-        if not _enabled:
-            continue
+        job = _q.get()
         _playing = True
         try:
-            try:
-                path = synth(text)
-            except Exception as e:
-                print(f"（语音合成失败，已跳过: {e}）")
-                continue
-            sink = _robot_sink
-            if sink is not None:
-                try:
-                    sink.play_file(path)
-                    continue
-                except Exception as e:
-                    print(f"（G1扬声器播放失败，本条回退本机: {e}）")
-            try:
-                _play_blocking(path)
-            except Exception as e:
-                print(f"（语音播报失败，已跳过: {e}）")
+            _process(job)
+        except Exception as exc:
+            _emit(job, "failed", stage="worker", error=str(exc))
         finally:
             _playing = False
+            _q.task_done()
 
 
-def speak(text):
+def speak(text, *, context=None, on_event=None, is_current=None):
     """异步播报。多条按顺序排队，不打断也不重叠。"""
     global _worker
-    if not _enabled or not text:
-        return
+    job = {"id": uuid.uuid4().hex, "text": str(text or "").strip(),
+           "context": dict(context or {}), "on_event": on_event, "is_current": is_current}
+    if not _enabled or not job["text"]:
+        _emit(job, "skipped", reason="muted" if not _enabled else "empty_text")
+        return job["id"]
     with _lock:
+        _emit(job, "queued")
+        _q.put(job)
         if _worker is None:
             _worker = threading.Thread(target=_run, daemon=True)
             _worker.start()
-    _q.put(str(text).strip())
+    return job["id"]
 
 
 def prefetch(texts):
@@ -151,7 +194,9 @@ def set_enabled(flag):
     if not flag:
         while not _q.empty():   # 清空未播的排队项
             try:
-                _q.get_nowait()
+                job = _q.get_nowait()
+                _emit(job, "skipped", reason="muted")
+                _q.task_done()
             except queue.Empty:
                 break
     return _enabled

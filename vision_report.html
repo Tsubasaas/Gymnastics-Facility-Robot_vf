@@ -1,0 +1,884 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>セッションレポート</title>
+<style>
+[hidden] { display: none !important; }
+:root {
+  --text: #0b2545;
+  --text-2: #3d5673;
+  --muted: #6b7f95;
+  --surface: #ffffff;
+  --line: #d3e6f8;
+  --grid: #e6edf4;
+  --axis: #c3cfdb;
+  --grad: linear-gradient(135deg, #22d3ee 0%, #3b82f6 55%, #6366f1 100%);
+  /* 积极/消极 = 发散色对(蓝↔红,已用 validate_palette 校验) */
+  --pos: #2a78d6;
+  --neg: #e34948;
+  /* 状态色(固定,始终配图标+文字) */
+  --good: #0ca30c;
+  --warning: #fab219;
+  --critical: #d03b3b;
+  --good-bg: #e7f7e7;
+  --warning-bg: #fff5dc;
+  --critical-bg: #fde8e8;
+  --none-bg: #f1f4f7;
+  --dot: #3d5673;
+  --shadow: 0 10px 30px rgba(29, 108, 210, .10), 0 2px 6px rgba(29, 108, 210, .06);
+  --font: "Noto Sans JP", "Yu Gothic UI", "Meiryo", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  color: var(--text); font: 14px/1.55 var(--font); -webkit-font-smoothing: antialiased;
+  background-color: #e2f1ff;
+  background-image:
+    radial-gradient(1100px 640px at -5% -10%, #8fd8ff 0%, rgba(143, 216, 255, 0) 62%),
+    radial-gradient(950px 660px at 105% -5%, #b9b4ff 0%, rgba(185, 180, 255, 0) 60%),
+    linear-gradient(160deg, #e6f6ff 0%, #f2f8ff 50%, #e4eeff 100%);
+  background-attachment: fixed;
+}
+button { font: inherit; cursor: pointer; }
+:focus-visible { outline: 3px solid rgba(59, 130, 246, .45); outline-offset: 2px; }
+
+.wrap { max-width: 1280px; margin: 0 auto; padding: 20px 20px 40px; }
+.top {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; margin-bottom: 18px;
+}
+.brand-mark {
+  width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; flex: none;
+  background: var(--grad); color: #fff; font-size: 20px; box-shadow: 0 6px 16px rgba(59, 130, 246, .35);
+}
+.ttl { min-width: 0; flex: 1; }
+.ttl h1 { margin: 0; font-size: 22px; line-height: 1.25; }
+.ttl .meta { color: var(--muted); font-size: 13px; }
+.sample {
+  display: inline-block; margin-left: 8px; vertical-align: 3px; font-size: 11px; font-weight: 700;
+  padding: 2px 8px; border-radius: 999px; background: #fff4e0; color: #9a5b06; border: 1px solid #fcd9a5;
+}
+.actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.btn {
+  display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 10px;
+  border: 1px solid #b5d4f1; background: #fff; color: #1e4a7a; font-weight: 700;
+}
+.btn:hover { background: #f3f9ff; border-color: #7cb7ff; }
+.btn.primary { background: var(--grad); color: #fff; border: 0; box-shadow: 0 6px 16px rgba(59, 130, 246, .3); }
+.lang { display: flex; border: 1px solid #b5d4f1; border-radius: 10px; overflow: hidden; background: #fff; }
+.lang button { background: none; border: 0; padding: 7px 11px; color: var(--muted); font-size: 12px; }
+.lang button[aria-pressed="true"] { background: var(--grad); color: #fff; font-weight: 700; }
+
+/* 卡片栅格 */
+.grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; }
+.card {
+  background: rgba(255, 255, 255, .9); border: 1px solid rgba(255, 255, 255, .95); border-radius: 16px;
+  box-shadow: var(--shadow); padding: 16px 18px; min-width: 0; break-inside: avoid;
+}
+.s3 { grid-column: span 3; } .s4 { grid-column: span 4; } .s5 { grid-column: span 5; }
+.s6 { grid-column: span 6; } .s7 { grid-column: span 7; } .s8 { grid-column: span 8; } .s12 { grid-column: span 12; }
+.card h2 { margin: 0; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+.card h2::before { content: ""; width: 4px; height: 16px; border-radius: 2px; background: var(--grad); flex: none; }
+.card .sub { color: var(--muted); font-size: 12px; margin: 2px 0 10px 12px; }
+
+/* 关键指标 */
+.kpi .lbl { color: var(--muted); font-size: 12px; font-weight: 700; }
+.kpi .val { font-size: 34px; font-weight: 800; line-height: 1.15; margin-top: 4px; }
+.kpi .val small { font-size: 15px; font-weight: 700; color: var(--text-2); margin-left: 2px; }
+.kpi .note { color: var(--text-2); font-size: 12px; margin-top: 4px; }
+.kpi .note .icon { font-weight: 800; }
+
+/* 图例 */
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: var(--text-2); margin: 0 0 6px 12px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+
+/* 图表 */
+.chart { position: relative; width: 100%; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart text { font-family: var(--font); }
+.tick { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.axlbl { fill: var(--text-2); font-size: 12px; }
+.vlabel { fill: var(--text); font-size: 12px; font-weight: 700; }
+.hit { fill: transparent; cursor: default; outline: none; }
+.hit:focus-visible { stroke: #3b82f6; stroke-width: 2; }
+.tip {
+  position: fixed; z-index: 30; pointer-events: none; padding: 8px 10px; border-radius: 10px;
+  background: #0b2545; color: #fff; font-size: 12px; line-height: 1.45; box-shadow: 0 10px 24px rgba(11, 37, 69, .3);
+  opacity: 0; transition: opacity .12s; max-width: 260px;
+}
+.tip.show { opacity: 1; }
+.tip b { font-weight: 800; }
+.tip .k { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; }
+
+/* 评判矩阵 */
+.matrix { width: 100%; border-collapse: separate; border-spacing: 4px; }
+.matrix th { font-size: 12px; color: var(--muted); font-weight: 700; text-align: center; padding: 2px; }
+.matrix th.row { text-align: left; color: var(--text); white-space: nowrap; }
+.matrix td { border-radius: 10px; padding: 8px 6px; text-align: center; font-size: 12px; font-weight: 700; line-height: 1.3; }
+.matrix td .ic { display: block; font-size: 16px; line-height: 1; margin-bottom: 3px; }
+.c-ok { background: var(--good-bg); color: #075f07; }
+.c-ok .ic { color: var(--good); }
+.c-issue { background: var(--warning-bg); color: #7a4a00; }
+.c-issue .ic { color: #c98500; }
+.c-still { background: var(--critical-bg); color: #8f1f1f; }
+.c-still .ic { color: var(--critical); }
+.c-none { background: var(--none-bg); color: var(--muted); font-weight: 400; }
+.mx-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--text-2); margin-top: 8px; }
+
+/* 表格 */
+.tbl-wrap { overflow-x: auto; }
+table.data { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.data th {
+  text-align: left; font-size: 12px; color: var(--muted); font-weight: 700; padding: 8px 10px;
+  border-bottom: 1px solid var(--line); white-space: nowrap;
+}
+table.data td { padding: 9px 10px; border-bottom: 1px solid #edf3f9; vertical-align: middle; }
+table.data td.num, table.data th.num { text-align: right; font-variant-numeric: tabular-nums; }
+table.data tr:last-child td { border-bottom: 0; }
+.who {
+  display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%;
+  background: var(--grad); color: #fff; font-size: 12px; font-weight: 800; margin-right: 8px;
+}
+.flag {
+  display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700;
+  padding: 2px 8px; border-radius: 999px; background: var(--critical-bg); color: #8f1f1f;
+}
+.okflag { background: var(--good-bg); color: #075f07; }
+.kind { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.kind.still { background: var(--critical-bg); color: #8f1f1f; }
+.kind.issue { background: var(--warning-bg); color: #7a4a00; }
+.kind.praise { background: var(--good-bg); color: #075f07; }
+
+details.dt { margin-top: 8px; }
+details.dt summary { cursor: pointer; color: #2563eb; font-size: 12px; font-weight: 700; margin-left: 12px; }
+details.dt table { margin-top: 6px; }
+
+.callout {
+  display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-radius: 12px;
+  background: linear-gradient(135deg, #fff1f2 0%, #ffe9ec 100%); border: 1px solid #fecdd3; margin-top: 10px;
+}
+.callout .ic { font-size: 20px; line-height: 1.2; }
+.callout b { color: #9f1239; }
+.notes { color: var(--text-2); font-size: 12px; margin: 0; padding-left: 18px; }
+.notes li + li { margin-top: 4px; }
+.footer { text-align: center; color: var(--muted); font-size: 12px; margin-top: 18px; }
+
+@media (max-width: 980px) {
+  .s3 { grid-column: span 6; } .s4, .s5, .s6, .s7, .s8 { grid-column: span 12; }
+}
+@media (max-width: 560px) {
+  .wrap { padding: 14px 16px 32px; }
+  .s3 { grid-column: span 12; }
+  .ttl h1 { font-size: 18px; }
+}
+@media print {
+  body { background: #fff; }
+  .actions, .lang, details.dt summary { display: none !important; }
+  details.dt { display: none; }
+  .card { box-shadow: none; border: 1px solid #dfe7ef; }
+  .wrap { padding: 0; max-width: none; }
+  .tip { display: none; }
+  @page { size: A4; margin: 12mm; }
+}
+
+/* Readable audit tables and consistent controls. */
+.brand-mark {width:145px;height:auto;display:block;object-fit:contain;mix-blend-mode:multiply;background:none;box-shadow:none;border-radius:0;}
+:root { --font: "Segoe UI", "Yu Gothic UI", "Meiryo", "Microsoft YaHei UI", sans-serif; }
+.btn { border-radius:8px; min-height:38px; font-size:13px; font-weight:600; text-decoration:none; box-shadow:0 1px 3px #1234560a; }
+.btn.primary { background:linear-gradient(115deg,#139abf,#2674cc 65%,#5361c3); box-shadow:0 3px 8px #2674cc25; }
+.card { box-shadow:0 5px 18px #2345670d; border-color:#dbe6f0; }
+#real-evidence table, #event-evidence table, #tb-speak table { min-width:850px; }
+#real-evidence td, #event-evidence td, #tb-speak td { white-space:normal; max-width:300px; min-width:90px; overflow-wrap:anywhere; line-height:1.8; vertical-align:top; padding:12px; }
+#real-evidence td:first-child, #event-evidence td:first-child { font:12px/1.8 Consolas,monospace; }
+#event-evidence details { margin-top:20px; }
+#event-evidence summary { padding:10px 0; cursor:pointer; font-weight:600; }
+@media print { #real-evidence table,#event-evidence table,#tb-speak table { min-width:0; font-size:10px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <img class="brand-mark" src="data:image/png;base64,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" alt="MotionLink" width="168" height="48">
+    <div class="ttl">
+      <h1><span data-i18n="title">ラジオ体操 セッションレポート</span><span class="sample" data-i18n="sample">サンプルデータ</span></h1>
+      <div class="meta" id="meta"></div>
+    </div>
+    <div class="lang" role="group" aria-label="language">
+      <button data-lang="ja">日本語</button><button data-lang="zh">中文</button><button data-lang="en">EN</button>
+    </div>
+    <div class="actions">
+      <button class="btn primary" id="btn-pdf">⎙ <span data-i18n="pdf">PDF / 印刷</span></button>
+      <button class="btn" id="btn-csv">⤓ CSV</button>
+      <button class="btn" id="btn-json">⤓ JSON</button>
+    </div>
+  </header>
+
+  <main class="grid">
+    <section class="card kpi s3" id="kpi-people"></section>
+    <section class="card kpi s3" id="kpi-pos"></section>
+    <section class="card kpi s3" id="kpi-speak"></section>
+    <section class="card kpi s3" id="kpi-still"></section>
+
+    <section class="card s7">
+      <h2 data-i18n="c_section">節ごとの表情</h2>
+      <div class="sub" data-i18n="c_section_sub">表情サンプル数(上:ポジティブ / 下:ネガティブ)</div>
+      <div class="legend" id="lg-section"></div>
+      <div class="chart" id="ch-section"></div>
+      <details class="dt"><summary data-i18n="show_table">データ表を表示</summary><div class="tbl-wrap" id="tb-section"></div></details>
+    </section>
+
+    <section class="card s5">
+      <h2 data-i18n="c_person">参加者別 ポジティブ率</h2>
+      <div class="sub" data-i18n="c_person_sub">全表情サンプルに占めるポジティブの割合</div>
+      <div class="chart" id="ch-person"></div>
+      <details class="dt"><summary data-i18n="show_table">データ表を表示</summary><div class="tbl-wrap" id="tb-person"></div></details>
+    </section>
+
+    <section class="card s6">
+      <h2 data-i18n="c_matrix">動作判定(③④⑤)</h2>
+      <div class="sub" data-i18n="c_matrix_sub">各節の第8拍で撮影した3枚から判定</div>
+      <div class="tbl-wrap"><table class="matrix" id="matrix"></table></div>
+      <div class="mx-legend" id="mx-legend"></div>
+    </section>
+
+    <section class="card s6">
+      <h2 data-i18n="c_affect">表情の内訳(PGC-ARS 6分類)</h2>
+      <div class="sub" data-i18n="c_affect_sub">全参加者・全節の合計サンプル数</div>
+      <div class="legend" id="lg-affect"></div>
+      <div class="chart" id="ch-affect"></div>
+      <details class="dt"><summary data-i18n="show_table">データ表を表示</summary><div class="tbl-wrap" id="tb-affect"></div></details>
+    </section>
+
+    <section class="card s12">
+      <h2 data-i18n="c_motion">運動量スコア</h2>
+      <div class="sub" data-i18n="c_motion_sub">関節フレーム間の画素変化(人物枠内)。判定ラインを下回ると「動きなし」</div>
+      <div class="chart" id="ch-motion"></div>
+      <details class="dt"><summary data-i18n="show_table">データ表を表示</summary><div class="tbl-wrap" id="tb-motion"></div></details>
+      <div class="callout" id="callout"></div>
+    </section>
+
+    <section class="card s7">
+      <h2 data-i18n="t_people">参加者サマリー</h2>
+      <div class="sub" data-i18n="t_people_sub">最後まで参加した方・表情・判定・フォローの要否</div>
+      <div class="tbl-wrap" id="tb-people"></div>
+    </section>
+
+    <section class="card s5">
+      <h2 data-i18n="t_speak">声かけ履歴</h2>
+      <div class="sub" data-i18n="t_speak_sub">ロボットが実際に読み上げた内容</div>
+      <div class="tbl-wrap" id="tb-speak"></div>
+    </section>
+
+    <section class="card s12">
+      <h2 data-i18n="notes">注記</h2>
+      <ul class="notes" id="notes"></ul>
+    </section>
+  </main>
+  <div class="footer" id="footer"></div>
+</div>
+<div class="tip" id="tip" role="tooltip"></div>
+
+<script>
+/* ================= 虚拟示例数据(之后可替换为 records/taiso_*.json) ================= */
+const SAMPLE_REPORT = {
+  sample: true,
+  session_id: "taiso_20261110_140005",
+  date: "2026-11-10", start: "14:00:05", end: "14:01:32", duration_s: 87,
+  program: "p7", speed_deg_s: 45, robot: "Unitree G1 (29 DOF)",
+  models: { judge: "qwen3-vl-plus", preview: "qwen3.7-flash" },
+  still_threshold: 4.0,
+  participants: [
+    { letter: "A", nickname: "田中さん", completed: true },
+    { letter: "B", nickname: "佐藤さん", completed: true },
+    { letter: "C", nickname: "鈴木さん", completed: true },
+    { letter: "D", nickname: "高橋さん", completed: true },
+  ],
+  sections: [
+    { key: "1_senobi", no: "①", judged: false, pos: 12, neg: 2 },
+    { key: "2_ude", no: "②", judged: false, pos: 13, neg: 2 },
+    { key: "3_udemawashi", no: "③", judged: true, pos: 11, neg: 4 },
+    { key: "4_mune", no: "④", judged: true, pos: 13, neg: 3 },
+    { key: "5_yokomage", no: "⑤", judged: true, pos: 13, neg: 2 },
+  ],
+  // PGC-ARS 6 类:每人计数
+  affects: {
+    A: { "愉悦": 9, "兴趣": 5, "满足": 6, "愤怒": 0, "焦虑": 0, "悲伤": 0 },
+    B: { "愉悦": 4, "兴趣": 6, "满足": 7, "愤怒": 0, "焦虑": 2, "悲伤": 1 },
+    C: { "愉悦": 3, "兴趣": 7, "满足": 5, "愤怒": 0, "焦虑": 3, "悲伤": 0 },
+    D: { "愉悦": 1, "兴趣": 3, "满足": 6, "愤怒": 0, "焦虑": 3, "悲伤": 4 },
+  },
+  // 评判:ok / issue / still;motion = 本地运动量分数
+  judgments: {
+    A: { "3_udemawashi": { r: "ok", m: 18.2 }, "4_mune": { r: "ok", m: 15.7 }, "5_yokomage": { r: "ok", m: 16.9 } },
+    B: { "3_udemawashi": { r: "issue", issue: "circle_small", m: 9.1 }, "4_mune": { r: "ok", m: 12.4 }, "5_yokomage": { r: "ok", m: 11.8 } },
+    C: { "3_udemawashi": { r: "ok", m: 14.3 }, "4_mune": { r: "issue", issue: "arms_low", m: 8.2 }, "5_yokomage": { r: "ok", m: 10.5 } },
+    D: { "3_udemawashi": { r: "still", m: 2.1 }, "4_mune": { r: "ok", m: 6.3 }, "5_yokomage": { r: "issue", issue: "bend_small", m: 5.9 } },
+  },
+  spoken: [
+    { t: "14:00:41", section: "3_udemawashi", name: "D", kind: "still", text: "Dさん、一緒に体を動かしましょう!" },
+    { t: "14:01:02", section: "4_mune", name: "C", kind: "issue", text: "Cさん、腕をもっと高く上げましょう" },
+    { t: "14:01:23", section: "5_yokomage", name: "D", kind: "issue", text: "Dさん、体をしっかり横に曲げましょう" },
+    { t: "14:01:24", section: "5_yokomage", name: "A", kind: "praise", text: "Aさん、とても上手です!" },
+  ],
+  follow_up: ["D"],
+};
+
+let REPORT = null;
+/* ================= 多语言 ================= */
+const I18N = {
+  ja: {
+    title: "ラジオ体操 セッションレポート", sample: "サンプルデータ", pdf: "PDF / 印刷",
+    meta: "{d} {s}–{e} · 演出 {dur} · {robot} · {spd}°/s",
+    k_people: "参加者", k_people_note: "全員が最後まで参加", k_pos: "ポジティブ表情率", k_pos_note: "{p} / {n} サンプル",
+    k_speak: "声かけ", k_speak_note: "指導 {i} · 誘い {s} · 称賛 {p}", k_still: "動きなしアラート", k_still_note: "{who}",
+    unit_people: "名", unit_times: "回",
+    c_section: "節ごとの表情", c_section_sub: "表情サンプル数(上:ポジティブ / 下:ネガティブ)",
+    c_person: "参加者別 ポジティブ率", c_person_sub: "全表情サンプルに占めるポジティブの割合",
+    c_matrix: "動作判定(③④⑤)", c_matrix_sub: "各節の第8拍で撮影した3枚から判定",
+    c_affect: "表情の内訳(PGC-ARS 6分類)", c_affect_sub: "全参加者・全節の合計サンプル数",
+    c_motion: "運動量スコア", c_motion_sub: "撮影フレーム間の画素変化(人物枠内)。判定ラインを下回ると「動きなし」",
+    t_people: "参加者サマリー", t_people_sub: "最後まで参加した方・表情・判定・フォローの要否",
+    t_speak: "声かけ履歴", t_speak_sub: "ロボットが実際に読み上げた内容", notes: "注記",
+    show_table: "データ表を表示", pos: "ポジティブ", neg: "ネガティブ", avg: "全体平均 {p}%",
+    section: "節", count: "サンプル数", ratio: "ポジティブ率", participant: "参加者",
+    ok: "OK", issue: "要改善", still: "動きなし", none: "判定なし",
+    threshold: "判定ライン {v}", score: "スコア",
+    col_who: "参加者", col_samples: "表情サンプル", col_pos: "ポジティブ率", col_main: "主な表情",
+    col_judge: "判定 OK", col_follow: "フォロー", follow: "要声かけ", fine: "良好",
+    col_time: "時刻", col_sec: "節", col_text: "内容", col_kind: "種類",
+    kind_still: "誘い", kind_issue: "指導", kind_praise: "称賛",
+    callout: "<b>{who}</b> は今日は動きが小さめでした(③で動きなし、⑤で曲げが小さい)。可能でしたら、あとでお声がけをお願いいたします。",
+    notes_list: [
+      "このレポートは<b>サンプルデータ</b>です。実際のセッション記録(records/taiso_*.json)とはまだ接続していません。",
+      "表情は PGC-ARS(Philadelphia Geriatric Center Affect Rating Scale, Lawton et al., 1996)の6分類を参考に、視覚言語モデルが1フレームごとに推定したものです。原尺度の正式な評価(観察者による約10分間の持続時間評定)ではありません。",
+      "「動きなし」は人物枠内の画素変化(運動量スコア)が判定ライン未満のときに判定します。カメラの揺れや照明で値が変わるため、現場で調整してください。",
+      "判定・表情は見守りの補助情報です。個人の評価や診断には使用しないでください。",
+    ],
+    footer: "生成: 体操コーチ コンソール · セッション {id}",
+    sec_names: { "1_senobi": "背伸び", "2_ude": "腕の運動", "3_udemawashi": "腕を回す", "4_mune": "胸をそらす", "5_yokomage": "体を横に曲げる" },
+    issues: { circle_small: "円が小さい", arms_low: "腕が低い", bend_small: "曲げが小さい", chest_closed: "胸が閉じている", lean_forward: "前かがみ" },
+    affects: { "愉悦": "喜び", "兴趣": "興味", "满足": "満足", "愤怒": "怒り", "焦虑": "不安", "悲伤": "悲しみ" },
+  },
+  zh: {
+    title: "广播体操 场次报告", sample: "示例数据", pdf: "PDF / 打印",
+    meta: "{d} {s}–{e} · 演出 {dur} · {robot} · {spd}°/s",
+    k_people: "参与者", k_people_note: "全员坚持到最后", k_pos: "积极表情率", k_pos_note: "{p} / {n} 次采样",
+    k_speak: "语音点评", k_speak_note: "纠正 {i} · 邀请 {s} · 表扬 {p}", k_still: "没在动提醒", k_still_note: "{who}",
+    unit_people: "名", unit_times: "次",
+    c_section: "各节表情", c_section_sub: "表情采样次数(上:积极 / 下:消极)",
+    c_person: "每人积极率", c_person_sub: "积极表情占全部表情采样的比例",
+    c_matrix: "动作评判(③④⑤)", c_matrix_sub: "每节第 8 拍抓的 3 帧画面评判",
+    c_affect: "表情构成(PGC-ARS 六类)", c_affect_sub: "全体参与者、全部各节的采样合计",
+    c_motion: "运动量分数", c_motion_sub: "抓帧之间人物框内的像素变化。低于判定线即「没在动」",
+    t_people: "参与者汇总", t_people_sub: "坚持到最后的人、表情、评判、是否需要跟进",
+    t_speak: "语音点评记录", t_speak_sub: "机器人实际念出的内容", notes: "说明",
+    show_table: "查看数据表", pos: "积极", neg: "消极", avg: "全场平均 {p}%",
+    section: "节", count: "采样次数", ratio: "积极率", participant: "参与者",
+    ok: "OK", issue: "要改善", still: "没在动", none: "不评判",
+    threshold: "判定线 {v}", score: "分数",
+    col_who: "参与者", col_samples: "表情采样", col_pos: "积极率", col_main: "主要表情",
+    col_judge: "评判 OK", col_follow: "跟进", follow: "需要关心", fine: "良好",
+    col_time: "时间", col_sec: "节", col_text: "内容", col_kind: "类型",
+    kind_still: "邀请", kind_issue: "纠正", kind_praise: "表扬",
+    callout: "<b>{who}</b> 今天动作偏小(③ 没在动,⑤ 侧弯太小)。方便的话,之后请去关心一下。",
+    notes_list: [
+      "本报告为<b>示例数据</b>,尚未接入真实的场次记录(records/taiso_*.json)。",
+      "表情参考 PGC-ARS(Philadelphia Geriatric Center Affect Rating Scale, Lawton et al., 1996)的六个类别,由视觉大模型逐帧估计,并非原量表的正式测评(观察者约 10 分钟的持续时间评分)。",
+      "「没在动」= 人物框内的像素变化(运动量分数)低于判定线。相机抖动、光线会影响数值,请在现场校准。",
+      "评判与表情仅作看护参考,请勿用于个人评价或诊断。",
+    ],
+    footer: "生成:体操教练 控制台 · 场次 {id}",
+    sec_names: { "1_senobi": "伸展", "2_ude": "摆臂", "3_udemawashi": "抡臂", "4_mune": "扩胸", "5_yokomage": "体侧屈" },
+    issues: { circle_small: "圈太小", arms_low: "手臂太低", bend_small: "侧弯太小", chest_closed: "胸没打开", lean_forward: "往前弯腰" },
+    affects: { "愉悦": "愉悦", "兴趣": "兴趣", "满足": "满足", "愤怒": "愤怒", "焦虑": "焦虑", "悲伤": "悲伤" },
+  },
+  en: {
+    title: "Radio Taiso Session Report", sample: "Sample data", pdf: "PDF / Print",
+    meta: "{d} {s}–{e} · Show {dur} · {robot} · {spd}°/s",
+    k_people: "Participants", k_people_note: "Everyone finished", k_pos: "Positive expressions", k_pos_note: "{p} / {n} samples",
+    k_speak: "Spoken feedback", k_speak_note: "Coaching {i} · Invites {s} · Praise {p}", k_still: "Not-moving alerts", k_still_note: "{who}",
+    unit_people: "", unit_times: "",
+    c_section: "Expressions by section", c_section_sub: "Expression samples (up: positive / down: negative)",
+    c_person: "Positive rate by participant", c_person_sub: "Share of positive among all expression samples",
+    c_matrix: "Movement judgments (③④⑤)", c_matrix_sub: "Judged from 3 frames captured by beat 8 of each section",
+    c_affect: "Expression breakdown (PGC-ARS, 6 classes)", c_affect_sub: "Total samples, all participants and sections",
+    c_motion: "Motion score", c_motion_sub: "Pixel change between captured frames inside each person's box. Below the line = “not moving”",
+    t_people: "Participant summary", t_people_sub: "Who finished, expressions, judgments, follow-up needed",
+    t_speak: "Spoken feedback log", t_speak_sub: "What the robot actually said", notes: "Notes",
+    show_table: "Show data table", pos: "Positive", neg: "Negative", avg: "Average {p}%",
+    section: "Section", count: "Samples", ratio: "Positive rate", participant: "Participant",
+    ok: "OK", issue: "Needs work", still: "Not moving", none: "Not judged",
+    threshold: "Threshold {v}", score: "Score",
+    col_who: "Participant", col_samples: "Samples", col_pos: "Positive", col_main: "Main expression",
+    col_judge: "Judged OK", col_follow: "Follow-up", follow: "Check in", fine: "Good",
+    col_time: "Time", col_sec: "Sec.", col_text: "Message", col_kind: "Type",
+    kind_still: "Invite", kind_issue: "Coaching", kind_praise: "Praise",
+    callout: "<b>{who}</b> moved less than others today (not moving in ③, small bend in ⑤). If possible, please check in with them afterwards.",
+    notes_list: [
+      "This report uses <b>sample data</b>. It is not yet connected to real session records (records/taiso_*.json).",
+      "Expressions follow the six classes of the PGC-ARS (Philadelphia Geriatric Center Affect Rating Scale, Lawton et al., 1996), estimated per frame by a vision-language model. This is not a formal administration of the scale (trained observers rating duration over ~10 minutes).",
+      "“Not moving” means the pixel change inside the person's box (motion score) fell below the threshold. Camera shake and lighting affect the value — calibrate on site.",
+      "Judgments and expressions are support information for caregivers. Do not use them to evaluate or diagnose individuals.",
+    ],
+    footer: "Generated by Taiso Coach Console · session {id}",
+    sec_names: { "1_senobi": "Stretch", "2_ude": "Arm swing", "3_udemawashi": "Arm circles", "4_mune": "Chest opener", "5_yokomage": "Side bend" },
+    issues: { circle_small: "circles too small", arms_low: "arms too low", bend_small: "bend too small", chest_closed: "chest not open", lean_forward: "leaning forward" },
+    affects: { "愉悦": "Pleasure", "兴趣": "Interest", "满足": "Contentment", "愤怒": "Anger", "焦虑": "Anxiety", "悲伤": "Sadness" },
+  },
+};
+const LANGS = ["ja", "zh", "en"];
+const AFFECT_KEYS = ["愉悦", "兴趣", "满足", "愤怒", "焦虑", "悲伤"];
+const AFFECT_EMOJI = { "愉悦": "😄", "兴趣": "👀", "满足": "😌", "愤怒": "😠", "焦虑": "😟", "悲伤": "😢" };
+const POSITIVE = new Set(["愉悦", "兴趣", "满足"]);
+let JUDGED = [];
+
+const params = new URLSearchParams(location.search);
+let lang = (() => {
+  const q = params.get("lang"); if (LANGS.includes(q)) return q;
+  try { const v = localStorage.getItem("coach-lang"); return LANGS.includes(v) ? v : "ja"; } catch { return "ja"; }
+})();
+const L = () => I18N[lang];
+const t = (k, v = {}) => String(L()[k] ?? k).replace(/\{(\w+)\}/g, (_, x) => v[x] ?? "");
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const nick = (l) => (REPORT.participants.find((p) => p.letter === l) || {}).nickname || "";
+const whoLabel = (l) => nick(l) ? `${l} · ${nick(l)}` : l;
+const secName = (k) => L().sec_names[k] || k;
+const secNo = (k) => (REPORT.sections.find((s) => s.key === k) || {}).no || (k ? String(k).split("_")[0] : "—");
+const SVGNS = "http://www.w3.org/2000/svg";
+
+/* ================= 派生统计 ================= */
+function stats() {
+  const per = REPORT.participants.map((p) => {
+    const a = REPORT.affects[p.letter] || {};
+    const pos = AFFECT_KEYS.filter((k) => POSITIVE.has(k)).reduce((s, k) => s + (a[k] || 0), 0);
+    const neg = AFFECT_KEYS.filter((k) => !POSITIVE.has(k)).reduce((s, k) => s + (a[k] || 0), 0);
+    const main = AFFECT_KEYS.slice().sort((x, y) => (a[y] || 0) - (a[x] || 0))[0];
+    const j = REPORT.judgments[p.letter] || {};
+    const okN = JUDGED.filter((k) => j[k] && j[k].r === "ok").length;
+    const stillN = JUDGED.filter((k) => j[k] && j[k].r === "still").length;
+    return { ...p, pos, neg, n: pos + neg, rate: pos + neg ? pos / (pos + neg) : null, main, okN, stillN,
+      follow: REPORT.follow_up.includes(p.letter) };
+  });
+  const totPos = per.reduce((s, x) => s + x.pos, 0), totN = per.reduce((s, x) => s + x.n, 0);
+  const affectTot = Object.fromEntries(AFFECT_KEYS.map((k) => [k, per.reduce((s, x) => s + ((REPORT.affects[x.letter] || {})[k] || 0), 0)]));
+  const stills = [];
+  for (const p of REPORT.participants) for (const k of JUDGED) {
+    const j = (REPORT.judgments[p.letter] || {})[k]; if (j && j.r === "still") stills.push({ who: p.letter, sec: k });
+  }
+  return { per, totPos, totN, rate: totN ? totPos / totN : null, affectTot, stills };
+}
+
+/* ================= 工具:SVG / 提示框 / 表格 ================= */
+function el(tag, attrs = {}, parent) {
+  const e = document.createElementNS(SVGNS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+// 只把远离基线那一端做成 4px 圆角(dir: up/down/right)
+function barPath(x, y, w, h, dir) {
+  const r = Math.max(0, Math.min(4, w / 2, h / 2));
+  if (h <= 0 || w <= 0) return "";
+  if (dir === "up") return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`;
+  if (dir === "down") return `M${x},${y}V${y + h - r}Q${x},${y + h} ${x + r},${y + h}H${x + w - r}Q${x + w},${y + h} ${x + w},${y + h - r}V${y}Z`;
+  return `M${x},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h - r}Q${x + w},${y + h} ${x + w - r},${y + h}H${x}Z`;
+}
+const tip = $("tip");
+function bindTip(target, html) {
+  const show = (e) => {
+    tip.innerHTML = html; tip.classList.add("show");
+    const r = target.getBoundingClientRect();
+    const x = e && e.clientX != null ? e.clientX : r.left + r.width / 2;
+    const y = e && e.clientY != null ? e.clientY : r.top;
+    const w = tip.offsetWidth, h = tip.offsetHeight;
+    tip.style.left = Math.min(window.innerWidth - w - 8, Math.max(8, x + 12)) + "px";
+    tip.style.top = Math.max(8, y - h - 12) + "px";
+  };
+  target.addEventListener("mousemove", show);
+  target.addEventListener("focus", () => show(null));
+  target.addEventListener("mouseleave", () => tip.classList.remove("show"));
+  target.addEventListener("blur", () => tip.classList.remove("show"));
+  target.setAttribute("tabindex", "0");
+}
+function table(headers, rows, numCols = []) {
+  return `<table class="data"><thead><tr>${headers.map((h, i) =>
+    `<th class="${numCols.includes(i) ? "num" : ""}">${h}</th>`).join("")}</tr></thead><tbody>${rows.map((r) =>
+    `<tr>${r.map((c, i) => `<td class="${numCols.includes(i) ? "num" : ""}">${c}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+}
+const pct = (x) => Number.isFinite(x) ? Math.round(x * 100) : "—";
+const legend = (items) => items.map(([c, txt]) => `<span><i style="background:${c}"></i>${esc(txt)}</span>`).join("");
+const niceMax = (v, step) => Math.max(step, Math.ceil(v / step) * step);
+
+/* ================= 图 1:各节表情(发散柱) ================= */
+function drawSection(S) {
+  const box = $("ch-section"); box.innerHTML = "";
+  const W = Math.max(320, box.clientWidth), H = 240, m = { t: 14, r: 12, b: 40, l: 36 };
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": t("c_section") }, box);
+  // 上下两半用同一比例尺,但各按自己的最大值分配高度(消极很少时不浪费下半区)
+  const posMax = niceMax(Math.max(...REPORT.sections.map((s) => s.pos)), 4);
+  const negMax = niceMax(Math.max(...REPORT.sections.map((s) => s.neg)), 4);
+  const iw = W - m.l - m.r, ih = H - m.t - m.b - 16;
+  const unit = ih / (posMax + negMax), y0 = m.t + posMax * unit;
+  const ys = (v) => v * unit;
+  const ticks = [posMax, posMax / 2, 0, -negMax];
+  for (const v of ticks) {
+    const y = y0 - ys(v);
+    el("line", { x1: m.l, x2: W - m.r, y1: y, y2: y, stroke: v === 0 ? css("--axis") : css("--grid"), "stroke-width": 1 }, svg);
+    el("text", { x: m.l - 6, y: y + 4, "text-anchor": "end", class: "tick" }, svg).textContent = Math.abs(v);
+  }
+  const n = REPORT.sections.length, band = iw / n, bw = Math.min(34, band * 0.46);
+  REPORT.sections.forEach((s, i) => {
+    const cx = m.l + band * i + band / 2, x = cx - bw / 2;
+    const g = el("g", {}, svg);
+    const hp = ys(s.pos), hn = ys(s.neg);
+    el("path", { d: barPath(x, y0 - hp - 1, bw, hp, "up"), fill: css("--pos"), class: "mark" }, g);
+    el("path", { d: barPath(x, y0 + 1, bw, hn, "down"), fill: css("--neg"), class: "mark" }, g);
+    el("text", { x: cx, y: y0 - hp - 6, "text-anchor": "middle", class: "vlabel" }, g).textContent = s.pos;
+    el("text", { x: cx, y: y0 + hn + 15, "text-anchor": "middle", class: "vlabel" }, g).textContent = s.neg;
+    el("text", { x: cx, y: H - 20, "text-anchor": "middle", class: "axlbl" }, g).textContent = s.no;
+    el("text", { x: cx, y: H - 5, "text-anchor": "middle", class: "tick" }, g).textContent = secName(s.key);
+    const hit = el("rect", { x: m.l + band * i, y: m.t, width: band, height: ih, class: "hit" }, g);
+    const r = s.pos / (s.pos + s.neg);
+    bindTip(hit, `<b>${esc(s.no)} ${esc(secName(s.key))}</b><br><span class="k" style="background:${css("--pos")}"></span>${esc(t("pos"))} ${s.pos}<br><span class="k" style="background:${css("--neg")}"></span>${esc(t("neg"))} ${s.neg}<br>${esc(t("ratio"))} ${pct(r)}%`);
+  });
+  $("lg-section").innerHTML = legend([[css("--pos"), t("pos")], [css("--neg"), t("neg")]]);
+  $("tb-section").innerHTML = table([t("section"), t("pos"), t("neg"), t("ratio")],
+    REPORT.sections.map((s) => [`${s.no} ${esc(secName(s.key))}`, s.pos, s.neg, pct(s.pos / (s.pos + s.neg)) + "%"]), [1, 2, 3]);
+}
+
+/* ================= 图 2:每人积极率(横向柱 + 平均线) ================= */
+function drawPerson(S) {
+  const box = $("ch-person"); box.innerHTML = "";
+  const rows = S.per.slice().sort((a, b) => b.rate - a.rate);
+  const W = Math.max(300, box.clientWidth), rowH = 38, m = { t: 22, r: 48, b: 24, l: 96 };
+  const H = m.t + rows.length * rowH + m.b;
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": t("c_person") }, box);
+  const iw = W - m.l - m.r, xs = (v) => m.l + v * iw;
+  for (const v of [0, .25, .5, .75, 1]) {
+    el("line", { x1: xs(v), x2: xs(v), y1: m.t - 4, y2: H - m.b, stroke: v === 0 ? css("--axis") : css("--grid") }, svg);
+    el("text", { x: xs(v), y: H - 6, "text-anchor": "middle", class: "tick" }, svg).textContent = pct(v) + "%";
+  }
+  rows.forEach((p, i) => {
+    const y = m.t + i * rowH + 7, bh = rowH - 16;
+    el("text", { x: m.l - 10, y: y + bh / 2 + 4, "text-anchor": "end", class: "axlbl" }, svg).textContent = whoLabel(p.letter);
+    el("path", { d: barPath(xs(0) + 1, y, Math.max(0, xs(p.rate) - xs(0) - 1), bh, "right"), fill: css("--pos"), class: "mark" }, svg);
+    el("text", { x: xs(p.rate) + 6, y: y + bh / 2 + 4, class: "vlabel" }, svg).textContent = pct(p.rate) + "%";
+    const hit = el("rect", { x: 0, y: m.t + i * rowH, width: W, height: rowH, class: "hit" }, svg);
+    bindTip(hit, `<b>${esc(whoLabel(p.letter))}</b><br>${esc(t("pos"))} ${p.pos} · ${esc(t("neg"))} ${p.neg}<br>${esc(t("ratio"))} ${pct(p.rate)}%`);
+  });
+  // 全场平均参考线(实线 hairline + 文字)
+  const ax = xs(S.rate);
+  el("line", { x1: ax, x2: ax, y1: m.t - 6, y2: H - m.b, stroke: css("--text-2"), "stroke-width": 1.5 }, svg);
+  el("text", { x: ax, y: m.t - 10, "text-anchor": "middle", class: "tick", style: "fill:" + css("--text-2") }, svg).textContent = t("avg", { p: pct(S.rate) });
+  $("tb-person").innerHTML = table([t("participant"), t("pos"), t("neg"), t("ratio")],
+    rows.map((p) => [esc(whoLabel(p.letter)), p.pos, p.neg, pct(p.rate) + "%"]), [1, 2, 3]);
+}
+
+/* ================= 评判矩阵(状态色 + 图标 + 文字) ================= */
+function drawMatrix() {
+  const head = `<tr><th></th>${REPORT.sections.map((s) => `<th>${s.no}<br><span style="font-weight:400">${esc(secName(s.key))}</span></th>`).join("")}</tr>`;
+  const body = REPORT.participants.map((p) => {
+    const j = REPORT.judgments[p.letter] || {};
+    return `<tr><th class="row"><span class="who">${esc(p.letter)}</span>${esc(p.nickname)}</th>${REPORT.sections.map((s) => {
+      if (!s.judged) return `<td class="c-none">—</td>`;
+      const c = j[s.key];
+      if (!c) return `<td class="c-none">—</td>`;
+      if (c.r === "unknown") return `<td class="c-none">—</td>`;
+      if (c.r === "ok") return `<td class="c-ok"><span class="ic">✓</span>${esc(t("ok"))}</td>`;
+      if (c.r === "still") return `<td class="c-still"><span class="ic">✕</span>${esc(t("still"))}</td>`;
+      return `<td class="c-issue"><span class="ic">△</span>${esc(L().issues[c.issue] || t("issue"))}</td>`;
+    }).join("")}</tr>`;
+  }).join("");
+  $("matrix").innerHTML = head + body;
+  $("mx-legend").innerHTML = [["c-ok", "✓", t("ok")], ["c-issue", "△", t("issue")], ["c-still", "✕", t("still")], ["c-none", "—", t("none")]]
+    .map(([c, ic, txt]) => `<span><span class="${c}" style="display:inline-block;border-radius:6px;padding:0 6px;margin-right:6px;font-weight:800">${ic}</span>${esc(txt)}</span>`).join("");
+}
+
+/* ================= 图 3:PGC-ARS 六类(横向柱,积极蓝/消极红) ================= */
+function drawAffect(S) {
+  const box = $("ch-affect"); box.innerHTML = "";
+  const W = Math.max(300, box.clientWidth), rowH = 32, m = { t: 6, r: 40, b: 24, l: 112 };
+  const H = m.t + AFFECT_KEYS.length * rowH + m.b;
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": t("c_affect") }, box);
+  const max = niceMax(Math.max(...Object.values(S.affectTot)), 5);
+  const iw = W - m.l - m.r, xs = (v) => m.l + (v / max) * iw;
+  for (let v = 0; v <= max; v += max / 5) {
+    el("line", { x1: xs(v), x2: xs(v), y1: m.t, y2: H - m.b, stroke: v === 0 ? css("--axis") : css("--grid") }, svg);
+    el("text", { x: xs(v), y: H - 6, "text-anchor": "middle", class: "tick" }, svg).textContent = v;
+  }
+  const total = Object.values(S.affectTot).reduce((a, b) => a + b, 0);
+  AFFECT_KEYS.forEach((k, i) => {
+    const y = m.t + i * rowH + 6, bh = rowH - 12, v = S.affectTot[k];
+    const color = POSITIVE.has(k) ? css("--pos") : css("--neg");
+    el("text", { x: m.l - 10, y: y + bh / 2 + 4, "text-anchor": "end", class: "axlbl" }, svg).textContent = `${AFFECT_EMOJI[k]} ${L().affects[k]}`;
+    if (v > 0) el("path", { d: barPath(xs(0) + 1, y, Math.max(0, xs(v) - xs(0) - 1), bh, "right"), fill: color, class: "mark" }, svg);
+    el("text", { x: xs(v) + 6, y: y + bh / 2 + 4, class: "vlabel" }, svg).textContent = v;
+    const hit = el("rect", { x: 0, y: m.t + i * rowH, width: W, height: rowH, class: "hit" }, svg);
+    const byPerson = REPORT.participants.map((p) => `${p.letter} ${(REPORT.affects[p.letter] || {})[k] || 0}`).join(" · ");
+    bindTip(hit, `<b>${AFFECT_EMOJI[k]} ${esc(L().affects[k])}</b> (${esc(POSITIVE.has(k) ? t("pos") : t("neg"))})<br>${v} / ${total} (${total ? pct(v / total) : 0}%)<br>${esc(byPerson)}`);
+  });
+  $("lg-affect").innerHTML = legend([[css("--pos"), t("pos")], [css("--neg"), t("neg")]]);
+  $("tb-affect").innerHTML = table([t("participant"), ...AFFECT_KEYS.map((k) => `${AFFECT_EMOJI[k]} ${esc(L().affects[k])}`)],
+    REPORT.participants.map((p) => [esc(whoLabel(p.letter)), ...AFFECT_KEYS.map((k) => (REPORT.affects[p.letter] || {})[k] || 0)]),
+    [1, 2, 3, 4, 5, 6]);
+}
+
+/* ================= 图 4:运动量分数(点图 + 判定线;低于线 = 状态红 + ✕) ================= */
+function drawMotion() {
+  const box = $("ch-motion"); box.innerHTML = "";
+  const W = Math.max(320, box.clientWidth), rowH = 44, m = { t: 26, r: 24, b: 28, l: 110 };
+  const H = m.t + REPORT.participants.length * rowH + m.b;
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": t("c_motion") }, box);
+  const max = 20, iw = W - m.l - m.r, xs = (v) => m.l + (Math.min(v, max) / max) * iw;
+  const th = REPORT.still_threshold;
+  // 判定线以下区域:淡红底
+  el("rect", { x: xs(0), y: m.t - 6, width: xs(th) - xs(0), height: H - m.b - m.t + 6, fill: css("--critical-bg") }, svg);
+  for (let v = 0; v <= max; v += 5) {
+    el("line", { x1: xs(v), x2: xs(v), y1: m.t - 6, y2: H - m.b, stroke: v === 0 ? css("--axis") : css("--grid") }, svg);
+    el("text", { x: xs(v), y: H - 8, "text-anchor": "middle", class: "tick" }, svg).textContent = v;
+  }
+  el("line", { x1: xs(th), x2: xs(th), y1: m.t - 6, y2: H - m.b, stroke: css("--critical"), "stroke-width": 1.5 }, svg);
+  el("text", { x: xs(th) + 6, y: m.t - 10, class: "tick", style: "fill:" + css("--critical") + ";font-weight:700" }, svg).textContent = t("threshold", { v: th.toFixed(1) });
+  REPORT.participants.forEach((p, i) => {
+    const cy = m.t + i * rowH + rowH / 2;
+    el("line", { x1: m.l, x2: W - m.r, y1: cy, y2: cy, stroke: css("--grid") }, svg);
+    el("text", { x: m.l - 10, y: cy + 4, "text-anchor": "end", class: "axlbl" }, svg).textContent = whoLabel(p.letter);
+    const j = REPORT.judgments[p.letter] || {};
+    // 同一行的点按分数排开,标签放点上方,避免重叠
+    JUDGED.forEach((k) => {
+      const c = j[k]; if (!c || !Number.isFinite(c.m)) return;
+      const x = xs(c.m), below = c.m < th;
+      const g = el("g", {}, svg);
+      el("circle", { cx: x, cy, r: 9, fill: below ? css("--critical") : css("--dot"), stroke: "#fff", "stroke-width": 2, class: "mark" }, g);
+      el("text", { x, y: cy + 4, "text-anchor": "middle", style: "fill:#fff;font-size:10px;font-weight:800" }, g).textContent = below ? "✕" : secNo(k);
+      // 只给低于判定线的点加文字(节号 + 分数);其余点的节号已写在点内
+      if (below) el("text", { x, y: cy - 14, "text-anchor": "middle", class: "tick", style: "fill:" + css("--critical") + ";font-weight:700" }, g).textContent = `${secNo(k)} ${c.m.toFixed(1)}`;
+      const hit = el("circle", { cx: x, cy, r: 14, class: "hit" }, g);
+      const res = c.r === "ok" ? t("ok") : c.r === "still" ? t("still") : (L().issues[c.issue] || t("issue"));
+      bindTip(hit, `<b>${esc(whoLabel(p.letter))}</b> · ${esc(secNo(k))} ${esc(secName(k))}<br>${esc(t("score"))} ${c.m.toFixed(1)}<br>${esc(res)}`);
+    });
+  });
+  $("tb-motion").innerHTML = table([t("participant"), ...JUDGED.map((k) => `${secNo(k)} ${esc(secName(k))}`)],
+    REPORT.participants.map((p) => [esc(whoLabel(p.letter)), ...JUDGED.map((k) => {
+      const c = (REPORT.judgments[p.letter] || {})[k]; return c && Number.isFinite(c.m) ? (c.m < th ? `✕ ${c.m.toFixed(1)}` : c.m.toFixed(1)) : "—";
+    })]), [1, 2, 3]);
+  const who = REPORT.follow_up.map((l) => whoLabel(l)).join("、");
+  $("callout").innerHTML = `<span class="ic">💬</span><div>${t("callout", { who: esc(who) })}</div>`;
+  $("callout").style.display = REPORT.follow_up.length ? "" : "none";
+}
+
+/* ================= 关键指标 / 表格 / 注记 ================= */
+function drawKpis(S) {
+  const nInv = REPORT.spoken.filter((x) => x.kind === "still").length;
+  const nIssue = REPORT.spoken.filter((x) => x.kind === "issue").length;
+  const nPraise = REPORT.spoken.filter((x) => x.kind === "praise").length;
+  const done = REPORT.participants.filter((p) => p.completed).length;
+  const kpi = (id, lbl, val, unit, note) => {
+    $(id).innerHTML = `<div class="lbl">${esc(lbl)}</div><div class="val">${val}${unit ? `<small>${esc(unit)}</small>` : ""}</div><div class="note">${note}</div>`;
+  };
+  kpi("kpi-people", t("k_people"), done, t("unit_people"), `<span class="icon" style="color:${css("--good")}">✓</span> ${esc(t("k_people_note"))}`);
+  kpi("kpi-pos", t("k_pos"), pct(S.rate), "%", esc(t("k_pos_note", { p: S.totPos, n: S.totN })));
+  kpi("kpi-speak", t("k_speak"), REPORT.spoken.length, t("unit_times"), esc(t("k_speak_note", { i: nIssue, s: nInv, p: nPraise })));
+  const stillWho = S.stills.map((x) => `${x.who}(${secNo(x.sec)})`).join("、") || "—";
+  kpi("kpi-still", t("k_still"), S.stills.length, t("unit_times"), `<span class="icon" style="color:${css("--critical")}">✕</span> ${esc(stillWho)}`);
+}
+function drawTables(S) {
+  $("tb-people").innerHTML = table(
+    [t("col_who"), t("col_samples"), t("col_pos"), t("col_main"), t("col_judge"), t("col_follow")],
+    S.per.map((p) => [
+      `<span class="who">${esc(p.letter)}</span>${esc(p.nickname)}`, p.n, pct(p.rate) + "%",
+      `${AFFECT_EMOJI[p.main]} ${esc(L().affects[p.main])}`, `${p.okN} / ${JUDGED.length}`,
+      p.follow ? `<span class="flag">✕ ${esc(t("follow"))}</span>` : `<span class="flag okflag">✓ ${esc(t("fine"))}</span>`,
+    ]), [1, 2, 4]);
+  $("tb-speak").innerHTML = table([t("col_time"), t("col_sec"), t("col_kind"), t("col_text")],
+    REPORT.spoken.map((x) => [x.t, secNo(x.section), `<span class="kind ${x.kind}">${esc(t("kind_" + x.kind))}</span>`, esc(x.text)]), [0]);
+}
+function drawText() {
+  document.documentElement.lang = { ja: "ja", zh: "zh-CN", en: "en" }[lang];
+  document.querySelectorAll("[data-i18n]").forEach((e) => { e.textContent = t(e.dataset.i18n); });
+  document.querySelectorAll(".lang button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.lang === lang)));
+  const dur = `${Math.floor((REPORT.duration_s || 0) / 60)}:${String(REPORT.duration_s % 60).padStart(2, "0")}`;
+  $("meta").textContent = t("meta", { d: REPORT.date, s: REPORT.start, e: REPORT.end, dur, robot: REPORT.robot, spd: REPORT.speed_deg_s });
+  $("notes").innerHTML = L().notes_list.map((x) => `<li>${x}</li>`).join("");
+  $("footer").textContent = t("footer", { id: REPORT.session_id });
+  document.title = `${t("title")} · ${REPORT.date}`;
+}
+function renderAll() {
+  if (!REPORT) {
+    document.querySelectorAll('[data-i18n]').forEach(e=>e.textContent=t(e.dataset.i18n));
+    document.querySelector('[data-i18n="sample"]').textContent=REAL_TEXT[lang].badge;
+    $('meta').textContent=REAL_TEXT[lang][document.body.dataset.reportError||'empty'];
+    modeLink.textContent=REAL_TEXT[lang].sample;
+    modeLink.href='/report?mode=sample&lang='+lang;
+    return;
+  }
+  JUDGED = REPORT.sections.filter((s) => s.judged).map((s) => s.key);
+  const S = stats();
+  drawText(); drawKpis(S); drawSection(S); drawPerson(S); drawMatrix(); drawAffect(S); drawMotion(); drawTables(S);
+  if (!REPORT.sample) { renderRealDetails(S); renderEventDetails(); }
+}
+
+/* ================= 下载 ================= */
+function download(name, mime, text) {
+  const blob = new Blob([text], { type: mime });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+function toCsv() {
+  const S = stats();
+  const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const lines = [];
+  lines.push(["section", "participant", "nickname", "samples", "positive", "negative", "positive_rate",
+    ...AFFECT_KEYS.map((k) => "affect_" + I18N.en.affects[k].toLowerCase()),
+    ...JUDGED.flatMap((k) => [`${k}_result`, `${k}_motion`]), "follow_up"].map(q).join(","));
+  for (const p of S.per) {
+    const j = REPORT.judgments[p.letter] || {};
+    lines.push(["participants", p.letter, p.nickname, p.n, p.pos, p.neg, p.n?p.rate.toFixed(3):"",
+      ...AFFECT_KEYS.map((k) => (REPORT.affects[p.letter] || {})[k] ?? ""),
+      ...JUDGED.flatMap((k) => j[k] ? [j[k].r === "issue" ? `issue:${j[k].issue}` : j[k].r, j[k].m] : ["", ""]),
+      p.follow ? "yes" : "no"].map(q).join(","));
+  }
+  lines.push("");
+  lines.push(["section", "time", "section_key", "participant", "kind", "text", "status", "output", "utterance_id", "observation_id", "feedback_id"].map(q).join(","));
+  for (const x of REPORT.spoken) lines.push([REPORT.sample?"spoken":"speech_receipt", x.t, x.section, x.name, x.kind, x.text, x.status, x.output, x.utterance_id, x.observation_id, x.feedback_id].map(q).join(","));
+  if (!REPORT.sample) {
+    lines.push('');
+    lines.push(['session_id','source_file','observation_id','section','participant','captured_at_utc','status','box','motion_score'].map(q).join(','));
+    for (const sec of REPORT.raw_record.sections || []) for (const r of sec.results?.length ? sec.results : [{}]) {
+      lines.push([REPORT.session_id, REPORT.source_file, sec.observation_id, sec.section, r.name,
+        (sec.captured_at || []).map(t=>new Date(t*1000).toISOString()).join(' / '), sec.status,
+        r.box ? JSON.stringify(r.box) : '', r.motion_score].map(q).join(','));
+    }
+  }
+  if (!REPORT.sample) {
+    lines.push('');
+    lines.push(['session_id','sample_id','captured_at','section','participant','affect','status','box','evidence'].map(q).join(','));
+    for (const a of REPORT.affect_samples||[]) for (const p of a.people?.length?a.people:[{}]) lines.push([REPORT.session_id,a.sample_id,a.captured_at,a.section,p.name,p.affect,a.status,JSON.stringify(p.box||null),(a.evidence||[]).join(' / ')].map(q).join(','));
+    lines.push('');
+    lines.push(['session_id','utterance_id','feedback_id','observation_id','time','status','output','text','reason'].map(q).join(','));
+    for (const e of REPORT.events||[]) if(e.event_type==='speech') lines.push([REPORT.session_id,e.utterance_id,e.feedback_id,e.observation_id,e.at,e.status,e.output,e.text,e.error||e.reason||e.confirmation].map(q).join(','));
+  }
+  return "﻿" + lines.join("\r\n");   // BOM:Excel 直接打开不乱码
+}
+$("btn-pdf").addEventListener("click", () => window.print());
+$("btn-csv").addEventListener("click", () => download(`${REPORT.session_id}.csv`, "text/csv;charset=utf-8", toCsv()));
+$("btn-json").addEventListener("click", () => download(`${REPORT.session_id}.json`, "application/json", JSON.stringify(REPORT, null, 2)));
+document.querySelectorAll(".lang button").forEach((b) => b.addEventListener("click", () => {
+  lang = b.dataset.lang; try { localStorage.setItem("coach-lang", lang); } catch {}
+  renderAll();
+}));
+let rz; window.addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(renderAll, 150); });
+
+const REAL_TEXT = {
+ ja: {badge:"実際の観察記録", empty:"実際の記録はまだありません。", failed:"記録を読み込めません。", sample:"4名のサンプルを見る", real:"実際の記録を見る", people:"識別できた参加者（完遂は未確認）", feedback:"音声再生完了（PC）", speech:"PCはプレーヤーの終了通知、G1は受信確認まで。実際に聞こえたかは未確認です。", affect:"この記録には表情データがありません。", source:"記録元", evidence:"観察との対応", note:"未測定・不明な項目は — で表示します。表情・参加完遂・音声再生完了を推定しません。", follow:"記録上、動きが小さい、または動作の改善が必要と判定された方です。", status:"判定状態"},
+ zh: {badge:"真实识别记录", empty:"暂无真实场次记录。", failed:"无法读取场次记录。", sample:"查看四人示例", real:"查看真实记录", people:"实际识别到的人数（未确认全程参与）", feedback:"本机播放完成", speech:"本机以播放器结束为准；G1仅确认接收，不代表已播完或现场已听到。", affect:"本记录未采集表情数据。", source:"记录来源", evidence:"识别对应明细", note:"未测量或不确定的内容显示 —；不会推断表情、全程参与或实际播报完成。", follow:"这些人在记录中被判断为动作偏小或需要调整。", status:"识别状态"},
+ en: {badge:"Actual observations", empty:"No actual session records yet.", failed:"Cannot load the session record.", sample:"View four-person example", real:"View actual records", people:"Identified participants; completion unverified", feedback:"Local playback completed", speech:"Local completion is a player return; G1 confirms receipt only, not audible completion.", affect:"Expression data was not recorded.", source:"Source record", evidence:"Observation correspondence", note:"Unmeasured or unknown values are shown as —. No completion, expression or playback result is inferred.", follow:"These participants were flagged for limited movement or an action correction.", status:"Recognition status"}
+};
+function renderRealDetails(S) {
+ const R=REAL_TEXT[lang];
+ document.querySelector('[data-i18n="sample"]').textContent=R.badge;
+ $('meta').textContent=R.source+': '+REPORT.source_file+' · '+REPORT.date;
+ $('kpi-people').querySelector('.val').textContent=REPORT.participants.length;
+ $('kpi-people').querySelector('.note').textContent=R.people;
+ if (!S.totN) { $('kpi-pos').querySelector('.val').textContent='—'; $('kpi-pos').querySelector('.note').textContent=R.affect; }
+ $('kpi-speak').querySelector('.lbl').textContent=R.feedback;
+ $('kpi-speak').querySelector('.val').textContent=REPORT.speech_completed || 0;
+ $('kpi-speak').querySelector('.note').textContent=R.speech;
+ if (!S.totN) for (const id of ['ch-section','ch-person','ch-affect','tb-section','tb-person','tb-affect']) $(id).textContent=R.affect;
+ document.querySelector('[data-i18n="c_matrix"]').textContent=t('c_matrix').replace(/\([^)]*\)/,'');
+ document.querySelector('[data-i18n="c_matrix_sub"]').textContent=R.evidence;
+ document.querySelector('[data-i18n="t_people_sub"]').textContent=R.people;
+ document.querySelector('[data-i18n="t_speak"]').textContent=({ja:'音声・声かけの履歴',zh:'语音与反馈回执',en:'Speech and feedback receipts'})[lang];
+ document.querySelector('[data-i18n="t_speak_sub"]').textContent=R.speech;
+ $('tb-speak').innerHTML=table([t('col_time'),t('col_who'),t('col_sec'),R.status,t('col_text'),'Observation / Utterance'],REPORT.spoken.map(x=>[esc(eventTime(x.t)),esc(x.name||'—'),esc(secNo(x.section)),esc(receiptStatus(x.status))+(x.linked===false?' · ⚠ ID mismatch':''),esc(x.text),esc((x.observation_id||'—')+' / '+(x.utterance_id||'—'))]));
+ $('tb-people').innerHTML=table([t('col_who'),t('col_samples'),t('col_pos'),t('col_main'),t('col_judge'),t('col_follow')],S.per.map(p=>[esc(whoLabel(p.letter)),p.n+' / '+({ja:'不明 ',zh:'未知 ',en:'unknown '})[lang]+(REPORT.affect_unknowns[p.letter]||0),p.n?pct(p.rate)+'%':'—',p.n?esc(L().affects[p.main]):'—',p.okN+' / '+Object.keys(REPORT.judgments[p.letter]||{}).length,p.follow?esc(t('follow')):'—']));
+ $('callout').textContent=REPORT.follow_up.map(whoLabel).join(', ')+': '+R.follow;
+ $('notes').innerHTML='<li>'+esc(R.note)+'</li><li>'+esc(R.speech)+'</li>';
+ modeLink.textContent=R.sample; modeLink.href='/report?mode=sample&lang='+lang;
+ let detail=document.getElementById('real-evidence');
+ if (!detail) {detail=document.createElement('section');detail.id='real-evidence';detail.className='card s12';document.querySelector('main').appendChild(detail);}
+ const rows=[];
+ for(const section of REPORT.raw_record.sections||[]) {
+   const rs=section.results||[];
+   for(const result of rs.length?rs:[{}]) rows.push([esc(section.observation_id||'—'),esc(section.section),esc(result.name||'—'),esc(section.status||'legacy'),esc((section.captured_at||[]).map(t=>new Date(t*1000).toISOString()).join(' / ')||'—'),esc(JSON.stringify(result.box||null)),Number.isFinite(result.motion_score)?result.motion_score.toFixed(2):'—']);
+ }
+ detail.innerHTML='<h2>'+esc(R.evidence)+'</h2><div class="tbl-wrap">'+table(['Observation ID',t('col_sec'),t('col_who'),R.status,'Captured at (UTC)','Box [0–1000]',t('score')],rows)+'</div>';
+ for(const section of REPORT.raw_record.sections||[]) {
+   const pictures=(section.evidence||[]).filter(n=>/^[a-f0-9]{32}_\d+_\d+\.jpg$/.test(n));
+   if(!pictures.length) continue;
+   const block=document.createElement('details');
+   block.innerHTML='<summary>'+esc(section.observation_id)+' · '+esc(section.section)+'</summary>'+pictures.map(n=>'<a href="/evidence/'+encodeURIComponent(n)+'" target="_blank"><img style="width:30%;height:auto;margin:1%" alt="Captured evidence" src="/evidence/'+encodeURIComponent(n)+'"></a>').join('');
+   detail.appendChild(block);
+ }
+}
+
+const RECEIPT_LABELS = {
+ ja:{queued:'待機中',synthesizing:'音声合成中',playing:'再生処理中',completed:'PC再生完了',robot_sent:'G1受信済・完了未確認',interrupted:'中断',failed:'失敗',skipped:'スキップ',fallback:'PCへ切替',subtitle_only:'字幕のみ',planned_not_confirmed:'予定・再生記録なし'},
+ zh:{queued:'已排队',synthesizing:'合成中',playing:'播放处理中',completed:'本机播放完成',robot_sent:'G1已接收·完成未确认',interrupted:'已中断',failed:'失败',skipped:'已跳过',fallback:'回退本机',subtitle_only:'仅字幕',planned_not_confirmed:'待播·无播放记录'},
+ en:{queued:'Queued',synthesizing:'Synthesizing',playing:'Playback in progress',completed:'Local playback completed',robot_sent:'G1 received; completion unconfirmed',interrupted:'Interrupted',failed:'Failed',skipped:'Skipped',fallback:'Local fallback',subtitle_only:'Subtitles only',planned_not_confirmed:'Planned; no playback receipt'}
+};
+const receiptStatus=s=>RECEIPT_LABELS[lang][s]||s||'—';
+const eventTime=x=>typeof x==='number'?new Date(x*1000).toLocaleString({ja:'ja-JP',zh:'zh-CN',en:'en-GB'}[lang]):x||'—';
+function renderEventDetails() {
+ const R=REAL_TEXT[lang];
+ let box=$('event-evidence');
+ if(!box){box=document.createElement('section');box.id='event-evidence';box.className='card s12';document.querySelector('main').appendChild(box);}
+ const rows=[];
+ for(const sample of REPORT.affect_samples||[]) {
+   for(const p of sample.people?.length?sample.people:[{}]) rows.push([
+     esc(sample.sample_id),esc(eventTime(sample.captured_at)),esc(sample.section||'—'),esc(p.name||'—'),
+     esc(L().affects[p.affect]||'—'),esc(sample.status),esc(JSON.stringify(p.box||null)),
+     (sample.evidence||[]).filter(n=>/^[a-f0-9]{32}_\d+_\d+\.jpg$/.test(n)).map(n=>'<a target="_blank" href="/evidence/'+encodeURIComponent(n)+'">↗ '+esc(n)+'</a>').join('<br>')||'—']);
+ }
+ const labels={ja:['表情サンプルの記録','音声イベント（時系列）'],zh:['表情采样明细','语音事件时间线'],en:['Expression sample records','Speech event timeline']}[lang];
+ box.innerHTML='<h2>'+labels[0]+'</h2><div class="tbl-wrap">'+table(['Sample ID',t('col_time'),t('col_sec'),t('col_who'),t('col_main'),R.status,'Box','Evidence'],rows)+'</div>';
+ const speechEvents=(REPORT.events||[]).filter(e=>e.event_type==='speech');
+ box.innerHTML+='<details><summary>'+labels[1]+'</summary><div class="tbl-wrap">'+table(['Utterance / Feedback',t('col_time'),R.status,'Output',t('col_text'),'Detail'],speechEvents.map(e=>[
+   esc(e.utterance_id+' / '+(e.feedback_id||'—')),esc(eventTime(e.at)),esc(receiptStatus(e.status)),esc(e.output||'—'),esc(e.text),esc(e.error||e.reason||e.confirmation||'—')]))+'</div></details>';
+}
+
+const modeLink=document.createElement('a');modeLink.className='btn';
+modeLink.href=params.get('mode')==='sample'?'/report?lang='+lang:'/report?mode=sample&lang='+lang;
+modeLink.textContent=REAL_TEXT[lang][params.get('mode')==='sample'?'real':'sample'];
+document.querySelector('header').appendChild(modeLink);
+const refreshReport=document.createElement('button');refreshReport.className='btn';refreshReport.type='button';
+refreshReport.textContent=({ja:'記録を更新',zh:'刷新记录',en:'Refresh record'})[lang];
+refreshReport.hidden=params.get('mode')==='sample';refreshReport.addEventListener('click',()=>boot());
+document.querySelector('header').appendChild(refreshReport);
+let pinnedRecord=params.get('id');let initialExport=true;
+async function boot() {
+ document.querySelector('main').hidden=true;
+ for(const id of ['btn-pdf','btn-csv','btn-json']) $(id).disabled=true;
+ if(params.get('mode')==='sample') REPORT=SAMPLE_REPORT;
+ else {
+   try {
+     const id=pinnedRecord;
+     const res=await fetch('/api/report'+(id?'?id='+encodeURIComponent(id):''),{cache:'no-store'});
+     if(!res.ok) throw Error(res.status===404?'empty':'failed');
+     REPORT=await res.json();
+     if(REPORT.sample!==false || !REPORT.raw_record) throw Error('failed');
+     pinnedRecord=REPORT.source_file;
+   } catch(e) {
+     document.body.dataset.reportError=e.message==='empty'?'empty':'failed';
+     REPORT=null; renderAll();
+     document.querySelector('[data-i18n="sample"]').textContent=REAL_TEXT[lang].badge;
+     return;
+   }
+ }
+ document.querySelector('main').hidden=false;
+ renderAll();
+ for(const id of ['btn-pdf','btn-csv','btn-json']) $(id).disabled=false;
+ const fmt=initialExport?params.get('fmt'):null;
+ initialExport=false;
+ if(fmt==='pdf') setTimeout(()=>window.print(),700);
+ else if(fmt==='csv'||fmt==='json') setTimeout(()=>$('btn-'+fmt).click(),400);
+}
+boot();
+</script>
+</body>
+</html>

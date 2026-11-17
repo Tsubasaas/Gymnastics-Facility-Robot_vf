@@ -6,6 +6,12 @@ __pycache__/
 .env.*
 .claude/
 
+# 演出 BGM 音频（版权素材，本地放置，不入库；见 bgm.py）
+bgm.mp3
+
+# 控制台"参加者"栏保存的现场名单（含昵称，不入库）
+participants.json
+
 # 第三方模型库：由 README 指引用户自行 git clone，不纳入本仓库
 mujoco_menagerie/
 

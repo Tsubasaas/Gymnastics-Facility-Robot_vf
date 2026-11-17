@@ -26,6 +26,7 @@ import json
 import os
 import sys
 import time
+import uuid
 from pathlib import Path
 
 for _s in (sys.stdout, sys.stderr):
@@ -33,6 +34,7 @@ for _s in (sys.stdout, sys.stderr):
         _s.reconfigure(encoding="utf-8", errors="replace")
 
 import demo_viewer
+from session_events import append_event
 
 _DIR = Path(__file__).resolve().parent
 VISION_CLOCK = _DIR / "vision_clock.json"    # 播放时钟广播给视觉进程
@@ -60,10 +62,23 @@ except Exception as _e:  # noqa: N816
         return False
 
 
-def say(text):
+def say(text, context=None, is_current=None):
     """播报一句（异步不阻塞）；同时在控制台打字幕，方便核对时机。"""
     print(f"🔊 {text}")
-    _tts_speak(text)
+    if context is None:
+        return _tts_speak(text)
+    context = dict(context)
+    def receipt(event):
+        append_event(context["session_id"], "speech", event)
+    if not TTS_READY:
+        event = {**context, "utterance_id": uuid.uuid4().hex, "text": text,
+                 "status": "subtitle_only", "reason": _TTS_WHY, "at": time.time()}
+        try:
+            receipt(event)
+        except Exception as exc:
+            print(f"[audio receipt write failed] {exc}")
+        return event["utterance_id"]
+    return _tts_speak(text, context=context, on_event=receipt, is_current=is_current)
 
 
 # ---- 台词表 ----
@@ -152,6 +167,7 @@ class VoiceCoach:
         self._key = None
         self._last_t = 0.0
         self._clock_wall = 0.0   # 上次写时钟文件的墙钟
+        self._session_id = None
 
     def prefetch_all(self):
         """预热全部台词+报数词+互动台词的TTS合成（后台进行），到点零等待。"""
@@ -180,7 +196,8 @@ class VoiceCoach:
         self._clock_wall = now
         try:
             tmp = VISION_CLOCK.with_suffix(".tmp")
-            tmp.write_text(json.dumps({"key": key, "t": round(t, 3),
+            tmp.write_text(json.dumps({"session_id": self._session_id,
+                                       "key": key, "t": round(t, 3),
                                        "wall": now}), "utf-8")
             os.replace(tmp, VISION_CLOCK)
         except OSError:
@@ -199,14 +216,27 @@ class VoiceCoach:
                 data = json.loads(OBS_PATH.read_text("utf-8"))
             except (OSError, ValueError):
                 return                # 还没有结果:窗内继续等
-            if data.get("section") != sec or \
+            if data.get("session_id") != self._session_id or data.get("section") != sec or \
                     time.time() - data.get("wall", 0) > 30:
                 return                # 旧节/陈旧数据不播
             self._fired.add(marker)
-            self.coach_feedback(data.get("observations"))
+            self.coach_feedback(data.get("observations"),
+                                observation_id=data.get("observation_id"), section=sec)
+
+    def _speak(self, text, **metadata):
+        session_id = self._session_id
+        section = self._key
+        if self._key in ("0_demo_full", "7_demo_full"):
+            section = next((k for k, _, start, end in demo_viewer.section_timeline()
+                            if start <= self._last_t < end), None)
+        context = {"session_id": session_id, "section": section, "kind": "narration", **metadata}
+        return say(text, context=context, is_current=lambda: self._session_id == session_id)
 
     def on_tick(self, key, t):
         """sim_viewer 每帧回调：到点未播则播；报数忙则跳过。"""
+        if key != self._key or t + 0.5 < self._last_t:
+            self._session_id = uuid.uuid4().hex
+            self._clock_wall = 0.0
         self._broadcast_clock(key, t)
         if key != self._key:
             self._key = key      # 切动作：该动作的提示点全部重新武装
@@ -217,7 +247,7 @@ class VoiceCoach:
         for ct, text in self._cues.get(key, ()):
             if ct <= t and (key, ct, "line") not in self._fired:
                 self._fired.add((key, ct, "line"))
-                say(text)
+                self._speak(text)
                 if text == CLOSING_LINE:     # 感谢语之后:班后汇报(排队顺播)
                     self._speak_report()
         for ct, word in self._count_cues.get(key, ()):
@@ -225,7 +255,7 @@ class VoiceCoach:
                 self._fired.add((key, ct, "count"))   # 过点即标记：跳过不补
                 if not _tts_busy() and t - ct < 0.4:  # 已过大半拍的也不追
                     print(f"  ♪ {word}")
-                    _tts_speak(word)
+                    self._speak(word, kind="count")
         self._try_feedback(key, t)
 
     def _speak_report(self):
@@ -235,28 +265,28 @@ class VoiceCoach:
             data = json.loads(REPORT_PATH.read_text("utf-8"))
         except (ImportError, OSError, ValueError):
             return
-        if time.time() - data.get("wall", 0) > 600:   # 只播本场的
+        if data.get("session_id") != self._session_id or time.time() - data.get("wall", 0) > 600:
             return
-        say(vr.REPORT_END)
+        self._speak(vr.REPORT_END, kind="summary")
         participants = data.get("participants") or []
         if participants:
-            say(vr.report_count_line(len(participants)))
+            self._speak(vr.report_count_line(len(participants)), kind="summary")
         for name in data.get("small") or []:
-            say(f"{name}{vr.REPORT_CALLOUT}")
+            self._speak(f"{name}{vr.REPORT_CALLOUT}", kind="summary", name=name)
         if data.get("record_file"):
-            say(vr.REPORT_SAVED)
+            self._speak(vr.REPORT_SAVED, kind="summary")
 
     # ---- 视觉互动接口（vision_coach.py 经 observations.json 喂入） ----
-    def coach_feedback(self, observations):
+    def coach_feedback(self, observations, observation_id=None, section=None):
         """observations=[{"name":..., "advice":...} 或 {"text":...}, ...]。
 
         列表为空/None 时不触发任何语音（=没识别到人就不出声）。
         """
         for obs in observations or []:
-            if "text" in obs:
-                say(obs["text"])
-            else:
-                say(f"{obs['name']}さん、{obs['advice']}")
+            text = obs.get("text") or f"{obs['name']}さん、{obs['advice']}"
+            self._speak(text, kind=obs.get("kind", "feedback"), name=obs.get("name"),
+                        observation_id=observation_id, feedback_id=obs.get("feedback_id"),
+                        section=section)
 
 
 def main():

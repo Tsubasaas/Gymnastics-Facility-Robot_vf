@@ -63,12 +63,18 @@ def parse_args():
     ap.add_argument("--robot-speaker", action="store_true",
                     help="语音从 G1 内置扬声器播出（Qwen TTS→PCM→PlayStream；"
                          "失败自动回退本机扬声器）")
+    ap.add_argument("--no-bgm", action="store_true",
+                    help="不播放演出 BGM（仅对注入了 BGM 的入口如 demo_robot 有效）")
     return ap.parse_args()
 
 
 # 语音教练挂载点：demo_robot 等入口可注入 demo_voice.VoiceCoach 实例，
 # 真机执行时按限速拉伸比例换算回原时间轴触发报幕。
 VOICE_COACH = None
+
+# BGM 挂载点：demo_robot 注入 bgm 模块后，真机执行预设动作时同步播放
+# （probe 链路测试不放）；动作结束/中断/异常时一律淡出停止。
+BGM = None
 
 
 def _enable_robot_speaker():
@@ -239,7 +245,15 @@ def main():
                 key = motion.get("name", "")
                 on_tick = (lambda t, _k=key, _s=scale:
                            VOICE_COACH.on_tick(_k, t * _s))
-            completed = executor.execute(motion, on_tick=on_tick)
+            use_bgm = (BGM is not None and not args.no_bgm
+                       and text.lower() != "probe")
+            if use_bgm:
+                BGM.start()
+            try:
+                completed = executor.execute(motion, on_tick=on_tick)
+            finally:
+                if use_bgm:
+                    BGM.stop()
             print(f"✓ 动作完成并释放 arm_sdk 权重（{completed.duration:.1f}s）")
         except KeyboardInterrupt:
             if executor:

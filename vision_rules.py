@@ -11,11 +11,77 @@
     绝不让它自由发挥台词。纠正要有把握,表扬可以宽松。
 """
 
+import json
 import os
+import string
+import time
+from pathlib import Path
 
-# 参与者字母(按画面从左到右的站位顺序);现场人数变了改环境变量即可,
-# 如两人: $env:VISION_NAMES="AB"
-NAMES = list(os.environ.get("VISION_NAMES", "ABC"))
+# 参与者字母(按画面从左到右的站位顺序)。来源优先级:
+#   1. participants.json —— 网页控制台"参加者"栏增删后自动保存(不入库)
+#   2. 环境变量 VISION_NAMES,如两人: $env:VISION_NAMES="AB"
+#   3. 默认 ABC
+# 视觉进程和演出进程都从这里读,控制台改完后新启动的演出程序也用新名单。
+PARTICIPANTS_FILE = Path(__file__).resolve().with_name("participants.json")
+MAX_PARTICIPANTS = 8
+NICKNAMES: dict = {}       # 字母 → 昵称(只在控制台显示;语音仍叫"Aさん")
+ADDED_AT: dict = {}        # 字母 → 加入名单的时间戳(秒,epoch);旧名单无记录时为 None
+
+
+def _valid_letter(x) -> bool:
+    return isinstance(x, str) and len(x) == 1 and x in string.ascii_uppercase
+
+
+def _load_names() -> list:
+    try:
+        data = json.loads(PARTICIPANTS_FILE.read_text("utf-8"))
+        names = [p["letter"] for p in data["participants"]
+                 if _valid_letter(p.get("letter"))]
+        if names:
+            for p in data["participants"]:
+                if _valid_letter(p.get("letter")):
+                    NICKNAMES[p["letter"]] = str(p.get("nickname", ""))[:20]
+                    ts = p.get("added_at")
+                    ADDED_AT[p["letter"]] = float(ts) if isinstance(ts, (int, float)) else None
+            return list(dict.fromkeys(names))[:MAX_PARTICIPANTS]
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    return list(os.environ.get("VISION_NAMES", "ABC"))
+
+
+NAMES = _load_names()
+
+
+def set_participants(items: list) -> None:
+    """控制台增删参与者:就地修改 NAMES(其他模块持有的引用同步生效)并存盘。
+    items=[{"letter":"A","nickname":"田中"}, ...],顺序 = 画面从左到右的站位。"""
+    letters, nick = [], {}
+    for it in items:
+        letter = str(it.get("letter", "")).strip().upper()
+        if not _valid_letter(letter):
+            raise ValueError(f"字母必须是 A~Z 中的一个: {letter!r}")
+        if letter in letters:
+            raise ValueError(f"字母重复: {letter}")
+        letters.append(letter)
+        nick[letter] = str(it.get("nickname", "")).strip()[:20]
+    if not 1 <= len(letters) <= MAX_PARTICIPANTS:
+        raise ValueError(f"参与者人数须在 1~{MAX_PARTICIPANTS} 之间")
+    now = time.time()
+    # 已在名单里的人保留原加入时间;新加的人记当前时间
+    added = {n: (ADDED_AT.get(n) if n in NAMES else now) for n in letters}
+    NAMES[:] = letters
+    NICKNAMES.clear()
+    NICKNAMES.update(nick)
+    ADDED_AT.clear()
+    ADDED_AT.update(added)
+    tmp = PARTICIPANTS_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"participants": [
+        {"letter": n, "nickname": NICKNAMES[n], "added_at": ADDED_AT[n],
+         "added_at_text": (time.strftime("%Y-%m-%d %H:%M:%S",
+                                         time.localtime(ADDED_AT[n]))
+                           if ADDED_AT[n] else None)}
+        for n in NAMES]}, ensure_ascii=False, indent=2), "utf-8")
+    os.replace(tmp, PARTICIPANTS_FILE)
 
 # 每节:VLM 评判标准(说给模型听) + 关键帧拍号(动作极值,必须 ≤8,
 # 第8拍末要发调用) + issue 键→纠正台词。praise 达标/拿不准时用。
@@ -71,6 +137,9 @@ PRAISES = [
 # 达标但不够带劲(幅度小、蔫)时的鼓励——比纠正温和,比表扬有推动力
 ENCOURAGE = "もっとテンション上げていきましょう!"
 
+# 几帧之间几乎没动(没在跟着做操)时的提醒——优先级高于纠正和表扬
+STILL = "一緒に体を動かしましょう!"
+
 # ---- 结束后的班后汇报(结尾感谢语之后播;数据来自整场视觉统计) ----
 REPORT_END = "体操セッションが終了しました。"
 REPORT_CALLOUT = ("さんは今日は少し動きが小さいようでした。"
@@ -98,6 +167,7 @@ def all_feedback_texts():
             texts.add(f"{name}さん、{praise}")
     for name in NAMES:
         texts.add(f"{name}さん、{ENCOURAGE}")
+        texts.add(f"{name}さん、{STILL}")
     texts.add(REPORT_END)
     texts.add(REPORT_SAVED)
     for n in range(1, len(NAMES) + 1):
